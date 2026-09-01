@@ -132,6 +132,23 @@ class KikoeruApiService {
         .toList();
   }
 
+  /// 关键词搜索（在线标签过滤：标签名作关键词）。
+  Future<List<OnlineWork>> searchWorks(String keyword,
+      {int pageSize = 20}) async {
+    final encoded = Uri.encodeComponent(keyword);
+    final response = await _dio.get('/api/search/$encoded',
+        queryParameters: {
+          'page': 1,
+          'pageSize': pageSize,
+          'order': 'release',
+          'sort': 'desc',
+        });
+    final data = response.data as Map<String, dynamic>;
+    return (((data['works'] ?? const []) as List))
+        .map((w) => OnlineWork.fromJson(w as Map<String, dynamic>))
+        .toList();
+  }
+
   /// 同社团作品（本地详情页网络相关推荐，M5 用户需求）。
   Future<List<OnlineWork>> getCircleWorks(int circleId,
       {int pageSize = 10}) async {

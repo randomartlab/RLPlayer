@@ -14,6 +14,7 @@ import '../providers/mirror_provider.dart';
 import '../providers/online_provider.dart';
 import '../utils/ui_tokens.dart';
 import 'audio_player_screen.dart';
+import 'tag_filter_screen.dart';
 import 'work_detail_screen.dart';
 
 /// 在线作品详情页（M12，沿用原版 work_detail_screen 布局骨架）：
@@ -397,12 +398,20 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
                         runSpacing: UiSpacing.xSmall,
                         children: [
                           for (final tag in work.tags.take(12))
-                            Chip(
+                            ActionChip(
                               label: Text(tag,
                                   style: const TextStyle(fontSize: 11)),
                               visualDensity: VisualDensity.compact,
                               materialTapTargetSize:
                                   MaterialTapTargetSize.shrinkWrap,
+                              // 点标签 → asmr.one 标签搜索（用户需求）。
+                              onPressed: () =>
+                                  Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (context) =>
+                                      TagFilterScreen(tag: tag, online: true),
+                                ),
+                              ),
                             ),
                         ],
                       ),

@@ -17,6 +17,7 @@ import '../widgets/enhanced_work_card.dart';
 import '../widgets/file_tree_view.dart';
 import 'audio_player_screen.dart';
 import 'online_work_detail_screen.dart';
+import 'tag_filter_screen.dart';
 
 /// 本地作品详情页（PRD §5.5，骨架 = OfflineWorkDetailScreen + WorkDetailScreen
 /// 视觉规格；网络参考区 M4 里程碑引入，当前页面 100% 本地信息）。
@@ -297,11 +298,18 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
                   runSpacing: UiSpacing.xSmall,
                   children: [
                     for (final tag in _netMeta!.netTags.take(12))
-                      Chip(
+                      ActionChip(
                         label: Text(tag, style: const TextStyle(fontSize: 11)),
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize:
                             MaterialTapTargetSize.shrinkWrap,
+                        // 点标签 → 过滤本地库同标签作品（用户需求）。
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (context) =>
+                                TagFilterScreen(tag: tag),
+                          ),
+                        ),
                       ),
                   ],
                 ),

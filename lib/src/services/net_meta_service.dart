@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -102,8 +103,19 @@ class NetMetaService {
       mirror.reportRequestFailure();
     }
 
-    // 2. DLsite 仅兜底（不可达则静默不显示，无重试，PRD 决策 4）。
-    // M4 阶段：asmr.one 未命中即标记 noResult；DLsite 页面解析后续里程碑补齐。
+    // 2. DLsite 兜底（PRD 决策 4：仅在 asmr.one 未命中时尝试一次；
+    //    不可达/未命中则静默，无重试无弹窗）。
+    final dlsiteMeta = await _fetchFromDlsite(rjCode, numeric);
+    if (dlsiteMeta != null) {
+      await database.upsertNetMeta(dlsiteMeta);
+      debugPrint('[NetMeta] DLsite 兜底命中: $rjCode');
+      // DLsite 元数据也回填显示字段（标题/CV）。
+      await _backfillDisplayFields(database, rjCode,
+          vas: dlsiteMeta.netVas, title: dlsiteMeta.netTitle);
+      return dlsiteMeta;
+    }
+
+    // 3. 两源均无 → noResult 标记（不再自动重试；手动刷新除外）。
     final noResult = NetMeta(
       rjCode: rjCode,
       workId: numeric,
@@ -140,6 +152,66 @@ class NetMetaService {
       );
     } catch (e) {
       debugPrint('[NetMeta] 显示字段回填失败: $e');
+    }
+  }
+
+  /// DLsite 兜底（产品 AJAX API，结构化 JSON 无需 HTML 解析）。
+  /// 单独 Dio 实例（不同域名，10s 超时；不可达静默返回 null）。
+  static final Dio _dlsiteDio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 10),
+    headers: {
+      'User-Agent':
+          'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Mobile Safari/537.36',
+      'Accept': 'application/json',
+    },
+    validateStatus: (status) => status != null && status < 500,
+  ));
+
+  Future<NetMeta?> _fetchFromDlsite(String rjCode, int numeric) async {
+    try {
+      final response = await _dlsiteDio.get(
+          'https://www.dlsite.com/maniax/product/info/ajax',
+          queryParameters: {'product_id': rjCode});
+      final data = response.data;
+      if (data is! Map) return null;
+      final workJson = (data[rjCode] ?? data['RJ$numeric']) as Map?;
+      if (workJson == null) return null;
+
+      final workName = (workJson['work_name'] ?? '') as String;
+      if (workName.isEmpty) return null;
+
+      // CV/标签从 dlite 的 genres/authors 结构提取。
+      final vas = ((workJson['authors'] ?? const []) as List)
+          .whereType<Map>()
+          .where((a) => (a['role'] ?? '').toString().contains('声優'))
+          .map((a) => (a['name'] ?? '') as String)
+          .where((n) => n.isNotEmpty)
+          .toList();
+      final tags = ((workJson['genres'] ?? const []) as List)
+          .whereType<Map>()
+          .map((g) => (g['name'] ?? '') as String)
+          .where((n) => n.isNotEmpty)
+          .toList();
+
+      return NetMeta(
+        rjCode: rjCode,
+        workId: numeric,
+        netTitle: workName,
+        netCircle: ((workJson['maker_name'] ?? '') as String),
+        netVas: vas,
+        netTags: tags,
+        netDescription: null,
+        netRelease: DateTime.tryParse(
+            (workJson['regist_date'] ?? '').toString().split(' ')[0]),
+        netRateAverage: (workJson['rate_average_2dp'] as num?)?.toDouble(),
+        netRateCount: (workJson['rate_count'] as num?)?.toInt(),
+        source: 'dlsite',
+        fetchedAt: DateTime.now(),
+      );
+    } catch (e) {
+      debugPrint('[NetMeta] DLsite 兜底不可达（静默）: $e');
+      return null;
     }
   }
 

@@ -301,6 +301,7 @@ class LocalLibraryScanner {
       circleName: _stringOf(
           (metadata?['circle'] as Map<String, dynamic>?)?['name']),
       vasNames: _stringsOf(metadata?['vas']),
+      tags: _stringsOf(metadata?['tags']),
       rootPath: workDir.path,
       coverPath: coverPath,
       coverSource: coverSource,

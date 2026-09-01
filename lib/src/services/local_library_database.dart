@@ -16,7 +16,7 @@ class LocalLibraryDatabase {
   LocalLibraryDatabase._(this._db);
 
   static const String _dbName = 'kiko_local.db';
-  static const int _dbVersion = 4;
+  static const int _dbVersion = 5;
 
   final Database _db;
 
@@ -45,6 +45,10 @@ class LocalLibraryDatabase {
               no_result INTEGER NOT NULL DEFAULT 0
             )
           ''');
+        }
+        if (oldVersion < 5) {
+          // 作品标签（本地 metadata.json；NetMeta 标签在 net_meta 表）。
+          await db.execute('ALTER TABLE works ADD COLUMN tags TEXT');
         }
         if (oldVersion < 4) {
           // CV 名列表（本地 metadata.json / 网络回填，用户决策 2026-09-01）。
@@ -163,6 +167,7 @@ class LocalLibraryDatabase {
           'title': work.title,
           'circle_name': work.circleName,
           'vas_names': work.vasNames.isEmpty ? null : work.vasNames.join('\u0001'),
+          'tags': work.tags.isEmpty ? null : work.tags.join('\u0001'),
           'root_path': work.rootPath,
           'cover_path': work.coverPath,
           'cover_source': work.coverSource.name,
@@ -287,6 +292,10 @@ class LocalLibraryDatabase {
       title: row['title'] as String,
       circleName: row['circle_name'] as String?,
       vasNames: ((row['vas_names'] as String?) ?? '')
+          .split('\u0001')
+          .where((v) => v.isNotEmpty)
+          .toList(),
+      tags: ((row['tags'] as String?) ?? '')
           .split('\u0001')
           .where((v) => v.isNotEmpty)
           .toList(),

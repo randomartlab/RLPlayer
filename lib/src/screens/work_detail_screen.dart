@@ -185,7 +185,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
             style: Theme.of(context)
                 .textTheme
                 .titleLarge
-                ?.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
+                ?.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
             maxLines: null,
             overflow: TextOverflow.visible,
           ),
@@ -251,7 +251,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w500,
                             color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            fontSize: 12)),
+                            fontSize: 15)),
                   ),
                   IconButton(
                     icon: const Icon(Icons.refresh, size: 18),
@@ -342,12 +342,14 @@ class _InfoRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: UiIconSize.standard, color: scheme.onSurfaceVariant),
+        Icon(icon, size: 22, color: scheme.onSurfaceVariant),
         const SizedBox(width: UiSpacing.small),
         Expanded(
           child: Text(
             label,
-            style: UiTextStyles.supporting.copyWith(
+            style: TextStyle(
+              fontSize: 16,
+              height: 1.4,
               color: scheme.onSurfaceVariant,
             ),
             maxLines: 2,
@@ -377,6 +379,7 @@ class _SectionHeader extends StatelessWidget {
               title,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w500,
+                    fontSize: 18,
                     color: scheme.onSurfaceVariant,
                   ),
             ),
@@ -440,7 +443,9 @@ class _RefLine extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Text(
         label,
-        style: UiTextStyles.supporting.copyWith(
+        style: TextStyle(
+          fontSize: 15,
+          height: 1.4,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         maxLines: 2,

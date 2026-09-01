@@ -162,3 +162,40 @@ flutter test                  # 中文路径下正常
   RJ789012（1 轨 + 同名封面 + 唯一单音轨歌词第二优先级关联）、
   RJ334455（metadata.json 标题/社团映射 + 占位封面）
 - 封面墙渲染 3 张卡片正常；sqlite 库数据正确。
+
+## M3 已实现内容（2026-09-01 晚，M12 在线模块）
+
+- `services/kikoeru_api_service.dart`：dio 客户端（登录 /api/auth/me、作品列表 /api/works、
+  详情 /api/work/{id}?v=2、**文件树独立接口 /api/tracks/{id}**、收藏 /api/favourites、
+  封面/流媒体/下载 URL 组装；健康检查测速 5s 超时）
+- `providers/mirror_provider.dart`：镜像管理（内置 api.asmr.one + 自定义增删/启用）、
+  冷启动自动测速选优、连续失败 ≥3 次自动重测切换、手动固定、
+  **Token 按实例 flutter_secure_storage 加密存储**（PRD 决策 1/2）
+- `providers/online_provider.dart`：在线列表 + 滚动分页 + 排序（发行日/评分/销量/价格）
+  + 已下载角标集合（本地库 rjCode 交集）
+- `screens/online_works_screen.dart`：在线封面墙（cached_network_image 封面、
+  RJ/R18/已下载角标、游客浏览、断网错误态不崩溃）
+- `screens/online_work_detail_screen.dart`：在线详情（信息区 + 标签 chip + 简介 +
+  文件树流播 + 下载全部 + 已下载→本地版详情入口）
+- `services/download_service.dart` + `providers/download_provider.dart`：
+  下载队列（并发 3、进度、取消）、**下载目录 = 扫描根目录/downloads**、
+  队列空闲自动触发 rescan（**下载即入库**）
+- `screens/downloads_screen.dart`：下载管理（我的页 Tab）；`screens/mirror_management_screen.dart`：
+  镜像管理 + 测速 + 登录（设置页「服务器与账号」分组）
+- `compileSdk = 37`（flutter_secure_storage 要求）
+
+## M3 MuMu 自动化验证记录（2026-09-01）
+
+通过 adb 驱动 + Dart VM 服务（debugDumpApp）完整验证：
+1. ✅ 在线封面墙：asmr.one 第 1 页 20 作品加载、封面图渲染
+2. ✅ 在线详情页：信息区 + /api/tracks 文件树（60 树节点）
+3. ✅ 流媒体播放：点音轨 → 全屏播放器（共用播放内核）
+4. ✅ 下载即入库：下载 RJ1657200 全部音轨（10 文件）→ 队列空闲自动 rescan →
+   本地库出现该作品（验收 #16 链路全通；测试数据已清理）
+5. ✅ 镜像管理页：登录/测速/固定框架就绪（需真实账号进一步验证 Token 流程）
+
+### MuMu 新增坑（本次发现）
+- `ChangeNotifierProxyProvider2` 必须用于 ChangeNotifier 子类（ProxyProvider2 会
+  报 "Tried to use Provider with a subtype of Listenable"）
+- 模拟器 DNS 走宿主机代理 fake-ip（198.18.x.x），asmr.one 可达依赖宿主代理开启
+- MuMu 旋转后 input tap 坐标系可能错乱，需重启虚拟机恢复

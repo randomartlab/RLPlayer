@@ -10,6 +10,7 @@ import '../utils/playback_helpers.dart';
 import '../utils/responsive_grid_helper.dart';
 import '../utils/ui_tokens.dart';
 import '../widgets/enhanced_work_card.dart';
+import 'online_works_screen.dart';
 import 'work_detail_screen.dart';
 import 'folder_picker_screen.dart';
 
@@ -293,29 +294,8 @@ class _WorksScreenState extends State<WorksScreen> {
   }
 
   Widget _buildOnlineBody() {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.cloud_off, size: 64, color: scheme.onSurfaceVariant),
-          const SizedBox(height: UiSpacing.medium),
-          Text(
-            '在线模块（M3 里程碑）',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(color: scheme.onSurfaceVariant),
-          ),
-          const SizedBox(height: UiSpacing.xSmall),
-          Text(
-            'asmr.one 在线浏览 / 流播 / 下载将在此视图接入',
-            style: UiTextStyles.supporting
-                .copyWith(color: scheme.onSurfaceVariant),
-          ),
-        ],
-      ),
-    );
+    // M12 在线封面墙（游客可浏览；断网错误态不崩溃）。
+    return const OnlineWorksScreen();
   }
 
   void _openDetail(BuildContext context, Work work) {

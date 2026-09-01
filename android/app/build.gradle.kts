@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "dev.kikolocal.kiko_local"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

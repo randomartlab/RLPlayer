@@ -107,11 +107,15 @@ class _FolderPickerScreenState extends State<FolderPickerScreen> {
     final added = await library.addRoot(_currentPath);
     if (!mounted) return;
     if (!added) {
+      final alreadyExists = library.roots.contains(_currentPath);
+      if (alreadyExists) {
+        // 已存在的根目录 → 直接触发重扫（避免"加了目录却不扫描"的死角）。
+        unawaited(library.rescan());
+      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(library.roots.contains(_currentPath)
-              ? '该目录已在扫描根目录中'
-              : '目录不可用'),
+          content: Text(alreadyExists ? '该目录已在扫描根目录中，开始重新扫描' : '目录不可用'),
           duration: const Duration(seconds: 2),
         ),
       );

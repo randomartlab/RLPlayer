@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/library_provider.dart';
+import '../providers/mirror_provider.dart';
 import '../providers/theme_mode.dart';
 import '../providers/theme_provider.dart';
 import '../providers/ui_settings_provider.dart';
 import '../utils/ui_tokens.dart';
 import 'folder_picker_screen.dart';
+import 'mirror_management_screen.dart';
 
 /// Tab4 设置页（M1 实现外观主题 + 导航样式；M3/M4 里程碑补齐服务器账号、
 /// 下载存储、偏好分组，PRD §5.10）。
@@ -20,6 +22,7 @@ class SettingsScreen extends StatelessWidget {
     final themeSettings = context.watch<ThemeSettingsProvider>();
     final uiSettings = context.watch<UiSettingsProvider>();
     final library = context.watch<LibraryProvider>();
+    final mirror = context.watch<MirrorProvider>();
 
     return Scaffold(
       appBar: AppBar(
@@ -28,6 +31,27 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(UiSpacing.medium),
         children: [
+          _SettingsCard(
+            title: '服务器与账号',
+            children: [
+              ListTile(
+                leading: _LeadingIcon(icon: Icons.dns_outlined, context: context),
+                title: const Text('镜像站点与登录'),
+                subtitle: Text(
+                  mirror.currentUser != null
+                      ? '${mirror.activeHost} · 已登录'
+                      : '${mirror.activeHost} · 游客浏览',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (context) => const MirrorManagementScreen(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: UiSpacing.medium),
           _SettingsCard(
             title: '本地库',
             children: [

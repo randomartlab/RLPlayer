@@ -1,15 +1,20 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
 import 'src/providers/audio_provider.dart';
+import 'src/providers/download_provider.dart';
 import 'src/providers/library_provider.dart';
+import 'src/providers/mirror_provider.dart';
+import 'src/providers/online_provider.dart';
 import 'src/providers/theme_mode.dart';
 import 'src/providers/theme_provider.dart';
 import 'src/providers/ui_settings_provider.dart';
 import 'src/screens/main_screen.dart';
 import 'src/services/audio_player_service.dart';
+import 'src/services/download_service.dart';
 import 'src/utils/theme.dart';
 
 /// KikoLocal —— KikoFlu 像素级复刻的本地播放安卓音乐播放器。
@@ -50,30 +55,67 @@ class KikoLocalApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => UiSettingsProvider()),
         ChangeNotifierProvider(create: (_) => AudioPlayerProvider(handler)),
         ChangeNotifierProvider(create: (_) => LibraryProvider()),
+        ChangeNotifierProvider(create: (_) => MirrorProvider()),
       ],
       child: DynamicColorBuilder(
         builder: (lightDynamic, darkDynamic) {
-          return Consumer<ThemeSettingsProvider>(
-            builder: (context, themeSettings, _) {
-              final settings = themeSettings.settings;
-              final useDynamic = settings.colorSchemeType ==
-                  ColorSchemeType.dynamic;
+          return MultiProvider(
+            providers: [
+              // 在线模块依赖镜像与本地库（已下载角标）。
+              ChangeNotifierProxyProvider2<MirrorProvider,
+                  LibraryProvider, OnlineProvider>(
+                create: (context) => OnlineProvider(
+                  mirror: context.read<MirrorProvider>(),
+                  library: context.read<LibraryProvider>(),
+                ),
+                update: (context, mirror, library, online) => online!,
+              ),
+              // 下载即入库：下载目录跟随扫描根目录，队列空闲触发重扫（PRD §5.12）。
+              ChangeNotifierProxyProvider<LibraryProvider, DownloadProvider>(
+                create: (context) {
+                  final library = context.read<LibraryProvider>();
+                  final service = DownloadService(
+                    downloadRoot:
+                        p.join(library.roots.firstOrNull ?? '/storage/emulated/0/Download', 'downloads'),
+                  );
+                  final provider = DownloadProvider(service);
+                  provider.onQueueIdle = (completed) async {
+                    await library.rescan(); // 下载完成 → M8 增量扫描入库
+                  };
+                  // 扫描根目录变化时同步下载目录。
+                  library.addListener(() {
+                    final root = library.roots.firstOrNull;
+                    if (root != null) {
+                      service.downloadRoot = p.join(root, 'downloads');
+                    }
+                  });
+                  return provider;
+                },
+                update: (context, library, previous) => previous!,
+              ),
+            ],
+            child: Consumer<ThemeSettingsProvider>(
+              builder: (context, themeSettings, _) {
+                final settings = themeSettings.settings;
+                final useDynamic = settings.colorSchemeType ==
+                    ColorSchemeType.dynamic;
 
-              return MaterialApp(
-                title: 'KikoLocal',
-                debugShowCheckedModeBanner: false,
-                theme: AppTheme.lightTheme(
-                  useDynamic ? lightDynamic : null,
-                  settings.colorSchemeType,
-                ),
-                darkTheme: AppTheme.darkTheme(
-                  useDynamic ? darkDynamic : null,
-                  settings.colorSchemeType,
-                ),
-                themeMode: settings.toThemeMode(),
-                home: const MainScreen(),
-              );
-            },
+                return MaterialApp(
+                  title: 'KikoLocal',
+                  debugShowCheckedModeBanner: false,
+                  theme: AppTheme.lightTheme(
+                    useDynamic ? lightDynamic : null,
+                    settings.colorSchemeType,
+                  ),
+                  darkTheme: AppTheme.darkTheme(
+                    useDynamic ? darkDynamic : null,
+                    settings.colorSchemeType,
+                  ),
+                  themeMode: settings.toThemeMode(),
+                  home: const MainScreen(),
+                );
+              },
+            ),
           );
         },
       ),

@@ -14,6 +14,7 @@ class Work {
     this.rjCode,
     required this.title,
     this.circleName,
+    this.vasNames = const [],
     required this.rootPath,
     this.coverPath,
     this.coverSource = CoverSource.placeholder,
@@ -35,6 +36,9 @@ class Work {
 
   /// 社团名（本地 metadata.json）。
   final String? circleName;
+
+  /// CV 名列表（本地 metadata.json vas；空时由 NetMeta 网络回填，用户决策）。
+  final List<String> vasNames;
 
   /// RJ 文件夹绝对路径。
   final String rootPath;
@@ -64,6 +68,7 @@ class Work {
     String? rjCode,
     String? title,
     String? circleName,
+    List<String>? vasNames,
     String? rootPath,
     String? coverPath,
     CoverSource? coverSource,
@@ -79,6 +84,7 @@ class Work {
       rjCode: rjCode ?? this.rjCode,
       title: title ?? this.title,
       circleName: circleName ?? this.circleName,
+      vasNames: vasNames ?? this.vasNames,
       rootPath: rootPath ?? this.rootPath,
       coverPath: coverPath ?? this.coverPath,
       coverSource: coverSource ?? this.coverSource,
@@ -148,6 +154,7 @@ class ScannedWork {
     this.rjCode,
     required this.title,
     this.circleName,
+    this.vasNames = const [],
     required this.rootPath,
     this.coverPath,
     this.coverSource = CoverSource.placeholder,
@@ -162,6 +169,9 @@ class ScannedWork {
   final String? rjCode;
   final String title;
   final String? circleName;
+
+  /// CV 名列表（本地 metadata.json vas）。
+  final List<String> vasNames;
   final String rootPath;
   final String? coverPath;
   final CoverSource coverSource;

@@ -16,7 +16,7 @@ class LocalLibraryDatabase {
   LocalLibraryDatabase._(this._db);
 
   static const String _dbName = 'kiko_local.db';
-  static const int _dbVersion = 3;
+  static const int _dbVersion = 4;
 
   final Database _db;
 
@@ -45,6 +45,11 @@ class LocalLibraryDatabase {
               no_result INTEGER NOT NULL DEFAULT 0
             )
           ''');
+        }
+        if (oldVersion < 4) {
+          // CV 名列表（本地 metadata.json / 网络回填，用户决策 2026-09-01）。
+          await db.execute(
+              'ALTER TABLE works ADD COLUMN vas_names TEXT');
         }
         if (oldVersion < 3) {
           // 播放历史（M7，断点续播）。
@@ -157,6 +162,7 @@ class LocalLibraryDatabase {
           'rj_code': work.rjCode,
           'title': work.title,
           'circle_name': work.circleName,
+          'vas_names': work.vasNames.isEmpty ? null : work.vasNames.join('\u0001'),
           'root_path': work.rootPath,
           'cover_path': work.coverPath,
           'cover_source': work.coverSource.name,
@@ -280,6 +286,10 @@ class LocalLibraryDatabase {
       rjCode: row['rj_code'] as String?,
       title: row['title'] as String,
       circleName: row['circle_name'] as String?,
+      vasNames: ((row['vas_names'] as String?) ?? '')
+          .split('\u0001')
+          .where((v) => v.isNotEmpty)
+          .toList(),
       rootPath: row['root_path'] as String,
       coverPath: row['cover_path'] as String?,
       coverSource: CoverSource.values.firstWhere(
@@ -316,6 +326,24 @@ class LocalLibraryDatabase {
       'cover_path': coverPath,
       'cover_source': 'network',
     }, where: 'id = ?', whereArgs: [workId]);
+  }
+
+  /// 显示字段回填（CV/标题，NetMeta 命中后调用；用户决策 2026-09-01）。
+  Future<void> updateWorkDisplayFields(
+    int workId, {
+    List<String>? vasNames,
+    String? title,
+  }) async {
+    final updates = <String, Object?>{};
+    if (vasNames != null && vasNames.isNotEmpty) {
+      updates['vas_names'] = vasNames.join('\u0001');
+    }
+    // 标题仅在本地标题无信息量（纯 RJ 号）时由网络标题补全——本地优先。
+    if (title != null && title.isNotEmpty) {
+      updates['title'] = title;
+    }
+    if (updates.isEmpty) return;
+    await _db.update('works', updates, where: 'id = ?', whereArgs: [workId]);
   }
 
   /// 按 RJ 号查作品 id（封面兜底定位）。

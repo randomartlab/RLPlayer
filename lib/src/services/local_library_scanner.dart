@@ -300,6 +300,7 @@ class LocalLibraryScanner {
       title: title,
       circleName: _stringOf(
           (metadata?['circle'] as Map<String, dynamic>?)?['name']),
+      vasNames: _stringsOf(metadata?['vas']),
       rootPath: workDir.path,
       coverPath: coverPath,
       coverSource: coverSource,
@@ -487,6 +488,15 @@ class LocalLibraryScanner {
   static String? _stringOf(dynamic value) {
     if (value is String && value.trim().isNotEmpty) return value.trim();
     return null;
+  }
+
+  /// vas: [{name: ...}] → 名字列表。
+  static List<String> _stringsOf(dynamic value) {
+    if (value is! List) return const [];
+    return value
+        .map((e) => e is Map ? ((e['name'] ?? '') as String).trim() : '')
+        .where((name) => name.isNotEmpty)
+        .toList();
   }
 
   static bool? _boolOf(dynamic value) {

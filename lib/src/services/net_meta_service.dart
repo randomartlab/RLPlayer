@@ -86,6 +86,7 @@ class NetMetaService {
       });
       await database.upsertNetMeta(meta);
       debugPrint('[NetMeta] asmr.one 命中: $rjCode');
+      await _backfillDisplayFields(database, rjCode, detail);
       // 封面降级链第 3 级：本地无封面 → 网络封面下载落盘（断网后仍可用）。
       await _fetchNetworkCover(database, rjCode, numeric);
       return meta;
@@ -105,6 +106,30 @@ class NetMetaService {
     );
     await database.upsertNetMeta(noResult);
     return noResult;
+  }
+
+  /// 显示字段回填（用户决策 2026-09-01）：CV 空时由网络补全；
+  /// 标题仅当本地标题为纯 RJ 号（无信息量）时用网络标题。
+  Future<void> _backfillDisplayFields(
+      LocalLibraryDatabase database, String rjCode, dynamic detail) async {
+    try {
+      final workId = await database.queryWorkIdByRj(rjCode);
+      if (workId == null) return;
+      final work = await database.queryWork(workId);
+      if (work == null) return;
+
+      final netVas = detail.vas;
+      final netTitle = detail.title;
+      // 本地标题为纯 RJ 号时才允许网络标题覆盖（本地优先）。
+      final titleIsRjOnly = work.title.trim().toLowerCase() == rjCode.toLowerCase();
+      await database.updateWorkDisplayFields(
+        workId,
+        vasNames: work.vasNames.isEmpty && netVas.isNotEmpty ? netVas : null,
+        title: titleIsRjOnly && netTitle.isNotEmpty ? netTitle : null,
+      );
+    } catch (e) {
+      debugPrint('[NetMeta] 显示字段回填失败: $e');
+    }
   }
 
   /// 网络封面兜底（PRD §5.11）：仅当本地作品封面为占位时下载落盘并回写。

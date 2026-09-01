@@ -249,6 +249,19 @@ class _MediumCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ],
+            // CV 行（本地 metadata.json / 网络回填，用户决策 2026-09-01）。
+            if (work.vasNames.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                'CV：${work.vasNames.join(' / ')}',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: scheme.onSurfaceVariant,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
             const SizedBox(height: 3),
             Row(
               children: [
@@ -375,6 +388,8 @@ class _ListCard extends StatelessWidget {
                   Text(
                     [
                       if (work.circleName != null) work.circleName!,
+                      if (work.vasNames.isNotEmpty)
+                        'CV: ${work.vasNames.first}',
                       if (work.rjCode != null) work.rjCode!,
                       '${work.trackCount} 轨',
                       if (work.durationSeconds != null)

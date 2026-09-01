@@ -16,7 +16,144 @@ class LocalLibraryDatabase {
   LocalLibraryDatabase._(this._db);
 
   static const String _dbName = 'kiko_local.db';
-  static const int _dbVersion = 6;
+  static const int _dbVersion = 7;
+
+  /// 全部迁移逻辑的单一来源（v1 之后每版增量；onCreate 与 onUpgrade 共用，
+  /// 杜绝 schema 漂移——修复“全新安装缺列”致命 bug 2026-09-02）。
+  static Future<void> _migrate(
+      Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS net_meta (
+          rj_code TEXT PRIMARY KEY,
+          work_id INTEGER,
+          net_title TEXT,
+          net_title_trans TEXT,
+          net_circle TEXT,
+          net_vas TEXT,
+          net_tags TEXT,
+          net_cover_url TEXT,
+          net_description TEXT,
+          net_release TEXT,
+          net_rate_average REAL,
+          net_rate_count INTEGER,
+          source TEXT NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          no_result INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
+    }
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS play_history (
+          track_key TEXT PRIMARY KEY,
+          node_id INTEGER,
+          work_id INTEGER,
+          track_title TEXT NOT NULL,
+          work_title TEXT NOT NULL,
+          cover_path TEXT,
+          artwork_url TEXT,
+          position_ms INTEGER NOT NULL,
+          duration_ms INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+      ''');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_history_updated '
+          'ON play_history(updated_at DESC)');
+    }
+    if (oldVersion < 4) {
+      await db.execute(
+          'ALTER TABLE works ADD COLUMN vas_names TEXT');
+    }
+    if (oldVersion < 5) {
+      await db.execute('ALTER TABLE works ADD COLUMN tags TEXT');
+    }
+    if (oldVersion < 6) {
+      await db.execute(
+          'CREATE TABLE IF NOT EXISTS playlists (id INTEGER PRIMARY KEY '
+          'AUTOINCREMENT, name TEXT NOT NULL, description TEXT, '
+          'created_at INTEGER NOT NULL)');
+      await db.execute(
+          'CREATE TABLE IF NOT EXISTS playlist_items (id INTEGER PRIMARY KEY '
+          'AUTOINCREMENT, playlist_id INTEGER NOT NULL, work_id INTEGER, '
+          'node_id INTEGER, track_key TEXT NOT NULL, track_title TEXT NOT NULL, '
+          'work_title TEXT, cover_path TEXT, sort_index INTEGER NOT NULL, '
+          'FOREIGN KEY(playlist_id) REFERENCES playlists(id) '
+          'ON DELETE CASCADE)');
+    }
+    if (oldVersion < 7) {
+      // v7 自愈：修复历史上 onCreate 与 onUpgrade 漂移产生的坏库
+      //（版本号已标 6 但缺列/缺表）。PRAGMA 检查后补齐。
+      await _selfHealV7(db);
+    }
+  }
+
+  /// v7 自愈：按需补齐缺失列/表（幂等，可重复执行）。
+  static Future<void> _selfHealV7(Database db) async {
+    // works 缺列检查。
+    final columns = await db.rawQuery('PRAGMA table_info(works)');
+    final columnNames = columns.map((c) => c['name'] as String).toSet();
+    if (!columnNames.contains('vas_names')) {
+      await db.execute('ALTER TABLE works ADD COLUMN vas_names TEXT');
+    }
+    if (!columnNames.contains('tags')) {
+      await db.execute('ALTER TABLE works ADD COLUMN tags TEXT');
+    }
+    // 辅助表存在性（IF NOT EXISTS 幂等）。
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS playlists (id INTEGER PRIMARY KEY '
+        'AUTOINCREMENT, name TEXT NOT NULL, description TEXT, '
+        'created_at INTEGER NOT NULL)');
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS playlist_items (id INTEGER PRIMARY KEY '
+        'AUTOINCREMENT, playlist_id INTEGER NOT NULL, work_id INTEGER, '
+        'node_id INTEGER, track_key TEXT NOT NULL, track_title TEXT NOT NULL, '
+        'work_title TEXT, cover_path TEXT, sort_index INTEGER NOT NULL, '
+        'FOREIGN KEY(playlist_id) REFERENCES playlists(id) '
+        'ON DELETE CASCADE)');
+  }
+
+  /// 基础表（v1）——仅 onCreate 使用；其余版本全部走 [_migrate]。
+  static Future<void> _createBaseTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE works (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rj_code TEXT,
+        title TEXT NOT NULL,
+        circle_name TEXT,
+        root_path TEXT NOT NULL,
+        cover_path TEXT,
+        cover_source TEXT NOT NULL DEFAULT 'placeholder',
+        duration_seconds INTEGER,
+        track_count INTEGER NOT NULL,
+        has_lyric INTEGER NOT NULL DEFAULT 0,
+        has_subtitle INTEGER NOT NULL DEFAULT 0,
+        nsfw INTEGER,
+        added_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+        'CREATE UNIQUE INDEX idx_works_root_path ON works(root_path)');
+    await db.execute('CREATE INDEX idx_works_rj_code ON works(rj_code)');
+    await db.execute('''
+      CREATE TABLE file_nodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        work_id INTEGER NOT NULL,
+        is_directory INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        parent_path TEXT NOT NULL,
+        file_path TEXT,
+        duration_seconds INTEGER,
+        lyric_path TEXT,
+        subtitle_path TEXT,
+        FOREIGN KEY(work_id) REFERENCES works(id) ON DELETE CASCADE
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX idx_nodes_work ON file_nodes(work_id)');
+  }
 
   final Database _db;
 
@@ -24,147 +161,13 @@ class LocalLibraryDatabase {
     final db = await openDatabase(
       p.join(await getDatabasesPath(), _dbName),
       version: _dbVersion,
-      onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 6) {
-          // 播放列表（M7，PRD §5.8）。
-          await db.execute(
-              'CREATE TABLE playlists (id INTEGER PRIMARY KEY AUTOINCREMENT, '
-              'name TEXT NOT NULL, description TEXT, created_at INTEGER NOT NULL)');
-          await db.execute(
-              'CREATE TABLE playlist_items (id INTEGER PRIMARY KEY AUTOINCREMENT, '
-              'playlist_id INTEGER NOT NULL, work_id INTEGER, node_id INTEGER, '
-              'track_key TEXT NOT NULL, track_title TEXT NOT NULL, work_title TEXT, '
-              'cover_path TEXT, sort_index INTEGER NOT NULL, '
-              'FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE)');
-        }
-        if (oldVersion < 2) {
-          await db.execute('''
-            CREATE TABLE net_meta (
-              rj_code TEXT PRIMARY KEY,
-              work_id INTEGER,
-              net_title TEXT,
-              net_title_trans TEXT,
-              net_circle TEXT,
-              net_vas TEXT,
-              net_tags TEXT,
-              net_cover_url TEXT,
-              net_description TEXT,
-              net_release TEXT,
-              net_rate_average REAL,
-              net_rate_count INTEGER,
-              source TEXT NOT NULL,
-              fetched_at INTEGER NOT NULL,
-              no_result INTEGER NOT NULL DEFAULT 0
-            )
-          ''');
-        }
-        if (oldVersion < 5) {
-          // 作品标签（本地 metadata.json；NetMeta 标签在 net_meta 表）。
-          await db.execute('ALTER TABLE works ADD COLUMN tags TEXT');
-        }
-        if (oldVersion < 4) {
-          // CV 名列表（本地 metadata.json / 网络回填，用户决策 2026-09-01）。
-          await db.execute(
-              'ALTER TABLE works ADD COLUMN vas_names TEXT');
-        }
-        if (oldVersion < 3) {
-          // 播放历史（M7，断点续播）。
-          await db.execute('''
-            CREATE TABLE play_history (
-              track_key TEXT PRIMARY KEY,
-              node_id INTEGER,
-              work_id INTEGER,
-              track_title TEXT NOT NULL,
-              work_title TEXT NOT NULL,
-              cover_path TEXT,
-              artwork_url TEXT,
-              position_ms INTEGER NOT NULL,
-              duration_ms INTEGER NOT NULL,
-              updated_at INTEGER NOT NULL
-            )
-          ''');
-          await db.execute(
-              'CREATE INDEX idx_history_updated ON play_history(updated_at DESC)');
-        }
-      },
+      onUpgrade: _migrate,
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE works (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            rj_code TEXT,
-            title TEXT NOT NULL,
-            circle_name TEXT,
-            root_path TEXT NOT NULL,
-            cover_path TEXT,
-            cover_source TEXT NOT NULL DEFAULT 'placeholder',
-            duration_seconds INTEGER,
-            track_count INTEGER NOT NULL,
-            has_lyric INTEGER NOT NULL DEFAULT 0,
-            has_subtitle INTEGER NOT NULL DEFAULT 0,
-            nsfw INTEGER,
-            added_at INTEGER NOT NULL
-          )
-        ''');
-        await db.execute(
-            'CREATE UNIQUE INDEX idx_works_root_path ON works(root_path)');
-        await db.execute(
-            'CREATE INDEX idx_works_rj_code ON works(rj_code)');
-        await db.execute('''
-          CREATE TABLE file_nodes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            work_id INTEGER NOT NULL,
-            is_directory INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            relative_path TEXT NOT NULL,
-            parent_path TEXT NOT NULL,
-            file_path TEXT,
-            duration_seconds INTEGER,
-            lyric_path TEXT,
-            subtitle_path TEXT,
-            FOREIGN KEY(work_id) REFERENCES works(id) ON DELETE CASCADE
-          )
-        ''');
-        await db.execute(
-            'CREATE INDEX idx_nodes_work ON file_nodes(work_id)');
-        // NetMeta：网络参考元数据缓存（M11）。
-        await db.execute('''
-          CREATE TABLE net_meta (
-            rj_code TEXT PRIMARY KEY,
-            work_id INTEGER,
-            net_title TEXT,
-            net_title_trans TEXT,
-            net_circle TEXT,
-            net_vas TEXT,
-            net_tags TEXT,
-            net_cover_url TEXT,
-            net_description TEXT,
-            net_release TEXT,
-            net_rate_average REAL,
-            net_rate_count INTEGER,
-            source TEXT NOT NULL,
-            fetched_at INTEGER NOT NULL,
-            no_result INTEGER NOT NULL DEFAULT 0
-          )
-        ''');
-        // 播放历史（M7，断点续播）。
-        await db.execute('''
-          CREATE TABLE play_history (
-            track_key TEXT PRIMARY KEY,
-            node_id INTEGER,
-            work_id INTEGER,
-            track_title TEXT NOT NULL,
-            work_title TEXT NOT NULL,
-            cover_path TEXT,
-            artwork_url TEXT,
-            position_ms INTEGER NOT NULL,
-            duration_ms INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-          )
-        ''');
-        await db.execute(
-            'CREATE INDEX idx_history_updated ON play_history(updated_at DESC)');
+        // 全新安装：基础表 + 与升级同一套迁移（单一来源，杜绝漂移）。
+        await _createBaseTables(db);
+        await _migrate(db, 1, version);
       },
-    );
+        );
     return LocalLibraryDatabase._(db);
   }
 

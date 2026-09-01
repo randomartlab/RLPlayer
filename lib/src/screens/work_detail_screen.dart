@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../models/net_meta.dart';
 import '../models/online_models.dart';
 import '../providers/mirror_provider.dart';
+import '../providers/preferences_provider.dart';
 import '../models/work.dart';
 import '../services/net_meta_service.dart';
 import '../providers/audio_provider.dart';
@@ -61,6 +62,11 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
   Future<void> _loadNetMeta({bool forceRefresh = false}) async {
     final rjCode = widget.work.rjCode;
     if (rjCode == null) return; // 未识别 RJ 的作品无参考信息。
+    // 偏好开关：网络元数据关闭时不拉取（PRD 验收：关开关后零请求）。
+    if (!forceRefresh &&
+        !context.read<PreferencesProvider>().metaEnabled) {
+      return;
+    }
     setState(() => _netMetaLoading = true);
     try {
       final meta = await context

@@ -13,6 +13,7 @@ import '../models/lyric.dart';
 import '../providers/audio_provider.dart';
 import '../services/scan_rules.dart';
 import '../services/subtitle_parser.dart';
+import '../providers/preferences_provider.dart';
 import '../utils/ui_tokens.dart';
 import '../widgets/player/lyric_view.dart';
 import '../widgets/player/playlist_dialog.dart';
@@ -40,6 +41,9 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
 
   bool _showLyrics = false;
   bool _immersive = false;
+
+  /// 偏好：默认显示字幕（打开播放器直接进歌词/字幕视图）。
+  bool _prefSubtitleDefault = false;
   bool _isDragging = false;
   double _dragValue = 0.0;
   Duration _position = Duration.zero;
@@ -54,6 +58,9 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
   @override
   void initState() {
     super.initState();
+    _prefSubtitleDefault =
+        context.read<PreferencesProvider>().subtitleDefault;
+    if (_prefSubtitleDefault) _showLyrics = true;
     _loadLyricsForCurrentTrack();
     final audio = context.read<AudioPlayerProvider>();
     _positionSub = audio.positionStream.listen((position) {

@@ -142,6 +142,44 @@ class KikoeruApiService {
         .toList();
   }
 
+  /// 作品列表（带分类参数：nsfw 年龄分级 / subtitle 字幕过滤）。
+  Future<OnlineWorksPage> getWorksFiltered({
+    int page = 1,
+    int pageSize = 20,
+    String order = 'release',
+    String sort = 'desc',
+    int? nsfw,
+    int? subtitle,
+  }) async {
+    final response = await _dio.get('/api/works', queryParameters: {
+      'page': page,
+      'pageSize': pageSize,
+      'order': order,
+      'sort': sort,
+      'subtitle': subtitle ?? 0,
+      if (nsfw != null) 'nsfw': nsfw,
+    });
+    final data = response.data as Map<String, dynamic>;
+    final pagination = (data['pagination'] ?? {}) as Map<String, dynamic>;
+    final works = ((data['works'] ?? []) as List)
+        .map((w) => OnlineWork.fromJson(w as Map<String, dynamic>))
+        .toList();
+    final currentPage = (pagination['currentPage'] as num?)?.toInt() ?? page;
+    final totalCount =
+        (pagination['totalCount'] ?? pagination['totalItems'] as num?)
+                ?.toInt() ??
+            works.length;
+    final explicitTotalPages = (pagination['totalPages'] as num?)?.toInt();
+    final totalPages = explicitTotalPages ??
+        (pageSize > 0 ? (totalCount / pageSize).ceil() : 1);
+    return OnlineWorksPage(
+      works: works,
+      currentPage: currentPage,
+      totalPages: totalPages,
+      totalItems: totalCount,
+    );
+  }
+
   /// 关键词搜索（在线标签过滤：标签名作关键词）。
   Future<List<OnlineWork>> searchWorks(String keyword,
       {int pageSize = 20}) async {

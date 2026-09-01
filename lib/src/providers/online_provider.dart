@@ -20,6 +20,16 @@ class OnlineProvider extends ChangeNotifier {
   /// 排序（PRD §5.12：发行日 / 评分 / 销量 / 价格）。
   String _order = 'release';
 
+  /// 分类（用户清单 #2：0 全部 / 1 全年龄 / 2 R18 / 3 带字幕）。
+  int _category = 0;
+  int get category => _category;
+
+  Future<void> setCategory(int value) async {
+    if (_category == value) return;
+    _category = value;
+    await refresh();
+  }
+
   /// 详情缓存（避免重复拉取）。
   final Map<int, OnlineWork> _detailCache = {};
 
@@ -108,9 +118,15 @@ class OnlineProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final page = await mirror.api.getWorks(
+      final page = await mirror.api.getWorksFiltered(
         page: _currentPage + 1,
         order: _order,
+        nsfw: switch (_category) {
+          1 => 0,
+          2 => 1,
+          _ => null,
+        },
+        subtitle: _category == 3 ? 1 : null,
       );
       mirror.reportRequestSuccess();
       _works = [..._works, ...page.works];

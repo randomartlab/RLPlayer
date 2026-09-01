@@ -76,6 +76,34 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
 
     return Column(
       children: [
+        // 分类 chips（用户清单 #2：全部/全年龄/R18/带字幕）。
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+              UiSpacing.medium, UiSpacing.xSmall, UiSpacing.medium, 0),
+          child: SizedBox(
+            height: 40,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final (value, label) in const [
+                  (0, '全部'),
+                  (1, '全年龄'),
+                  (2, 'R18'),
+                  (3, '带字幕'),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: UiSpacing.small),
+                    child: FilterChip(
+                      label: Text(label),
+                      selected: online.category == value,
+                      onSelected: (_) => online.setCategory(value),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
         // 工具行：视图切换（大网格/小网格/列表，对齐 KikoFlu 卡片模式）+ 排序 chips。
         Padding(
           padding: const EdgeInsets.fromLTRB(

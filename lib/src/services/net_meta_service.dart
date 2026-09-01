@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -29,12 +31,24 @@ class NetMetaService {
   int _running = 0;
 
   /// 拉取（带缓存）：详情页打开与扫描后异步触发共用入口。
+  /// 仅 Wi-Fi 拉取（PRD §5.11；手动刷新 forceRefresh 不受限）。
+  Future<bool> _wifiOnlyAllowed() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool('pref_wifi_only') ?? false)) return true;
+    final results = await Connectivity().checkConnectivity();
+    return results.contains(ConnectivityResult.wifi) ||
+        results.contains(ConnectivityResult.ethernet);
+  }
+
   Future<NetMeta?> getMeta(String rjCode, {bool forceRefresh = false}) async {
     final database = db;
     if (database == null) return null;
     final numeric = int.tryParse(
         rjCode.replaceFirst(RegExp('^(RJ|BJ|VJ)', caseSensitive: false), ''));
     if (numeric == null) return null;
+
+    // 仅 Wi-Fi 偏好：非 Wi-Fi 且非强制刷新 → 不拉取（缓存可用）。
+    if (!forceRefresh && !await _wifiOnlyAllowed()) return null;
 
     if (!forceRefresh) {
       final cached = await database.queryNetMeta(rjCode);
@@ -96,7 +110,9 @@ class NetMetaService {
       await _backfillDisplayFields(database, rjCode,
           vas: detail.vas, title: detail.title);
       // 封面降级链第 3 级：本地无封面 → 网络封面下载落盘（断网后仍可用）。
-      await _fetchNetworkCover(database, rjCode, numeric);
+      if (await _wifiOnlyAllowed()) {
+        await _fetchNetworkCover(database, rjCode, numeric);
+      }
       return meta;
     } catch (e) {
       debugPrint('[NetMeta] asmr.one 未命中: $rjCode ($e)');

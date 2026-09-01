@@ -173,11 +173,23 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
   /// 与音频 '歌名.mp3' → '歌名' 相同即命中。
   OnlineFileNode? _matchSubtitle(
       OnlineFileNode audio, List<OnlineFileNode> subtitles) {
-    final audioBase = _stripAudioExt(audio.title.toLowerCase());
+    final audioFull = audio.title.toLowerCase();
+    final audioBase = _stripAudioExt(audioFull);
     if (audioBase.isEmpty) return null;
 
-    // 第一层：精确匹配（歌名.mp3.vtt / 歌名.vtt / 歌名.mp3.lrc 等
-    // 全部组合经双层剥离后与音频基础名比对）。
+    // 第〇层（用户强调 2026-09-01）：字幕名去掉字幕扩展后 = 音频完整名
+    // （名+音频扩展）——该站字幕命名常态为「歌名.mp3.vtt」「歌名.mp3.lrc」。
+    for (final subtitle in subtitles) {
+      var name = subtitle.title.toLowerCase();
+      for (final ext in const ['.vtt', '.srt', '.lrc', '.txt']) {
+        if (name.endsWith(ext)) {
+          name = name.substring(0, name.length - ext.length);
+          break;
+        }
+      }
+      if (audioFull == name) return subtitle;
+    }
+    // 第一层：精确匹配（双层剥离后基础名比对，覆盖 歌名.vtt/歌名.lrc 等）。
     for (final subtitle in subtitles) {
       final subBase = _stripSubtitleExt(subtitle.title.toLowerCase());
       if (audioBase == subBase) return subtitle;

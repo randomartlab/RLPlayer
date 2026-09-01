@@ -20,6 +20,7 @@ import 'src/services/download_service.dart';
 import 'src/services/history_service.dart';
 import 'src/services/net_meta_service.dart';
 import 'src/utils/theme.dart';
+import 'src/widgets/storage_permission_gate.dart';
 
 /// KikoLocal —— KikoFlu 像素级复刻的本地播放安卓音乐播放器。
 Future<void> main() async {
@@ -158,7 +159,9 @@ class KikoLocalApp extends StatelessWidget {
                     settings.colorSchemeType,
                   ),
                   themeMode: settings.toThemeMode(),
-                  home: const _HistoryRecorder(child: MainScreen()),
+                  home: StoragePermissionGate(
+            child: _HistoryRecorder(child: MainScreen()),
+          ),
                 );
               },
             ),

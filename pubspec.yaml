@@ -28,6 +28,17 @@ dependencies:
   shared_preferences: ^2.3.2
   path: ^1.9.0
   path_provider: ^2.1.4
+  sqflite: ^2.4.0
+
+  # 权限（PRD §7：存储访问；低版本回退 READ_EXTERNAL_STORAGE）
+  permission_handler: ^12.0.0
+
+  # 封面墙瀑布流（KikoFlu 沿用清单）
+  flutter_staggered_grid_view: ^0.7.0
+
+  # 音频元数据（时长/内嵌封面提取，纯 Dart）
+  audio_metadata_reader: ^1.7.1
+  charset: ^2.0.1
 
 dev_dependencies:
   flutter_test:

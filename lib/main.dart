@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'src/providers/audio_provider.dart';
+import 'src/providers/library_provider.dart';
 import 'src/providers/theme_mode.dart';
 import 'src/providers/theme_provider.dart';
 import 'src/providers/ui_settings_provider.dart';
@@ -41,6 +42,7 @@ class KikoLocalApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeSettingsProvider()),
         ChangeNotifierProvider(create: (_) => UiSettingsProvider()),
         ChangeNotifierProvider(create: (_) => AudioPlayerProvider(handler)),
+        ChangeNotifierProvider(create: (_) => LibraryProvider()),
       ],
       child: DynamicColorBuilder(
         builder: (lightDynamic, darkDynamic) {

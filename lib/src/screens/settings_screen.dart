@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/library_provider.dart';
 import '../providers/theme_mode.dart';
 import '../providers/theme_provider.dart';
 import '../providers/ui_settings_provider.dart';
 import '../utils/ui_tokens.dart';
+import 'folder_picker_screen.dart';
 
 /// Tab4 设置页（M1 实现外观主题 + 导航样式；M3/M4 里程碑补齐服务器账号、
 /// 下载存储、偏好分组，PRD §5.10）。
@@ -15,6 +19,7 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeSettings = context.watch<ThemeSettingsProvider>();
     final uiSettings = context.watch<UiSettingsProvider>();
+    final library = context.watch<LibraryProvider>();
 
     return Scaffold(
       appBar: AppBar(
@@ -23,6 +28,37 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(UiSpacing.medium),
         children: [
+          _SettingsCard(
+            title: '本地库',
+            children: [
+              ListTile(
+                leading:
+                    _LeadingIcon(icon: Icons.folder_outlined, context: context),
+                title: const Text('扫描根目录'),
+                subtitle: Text(
+                  library.roots.isEmpty
+                      ? '未设置（支持多目录、穿透扫描）'
+                      : '${library.roots.length} 个目录',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openRootsManager(context),
+              ),
+              ListTile(
+                leading:
+                    _LeadingIcon(icon: Icons.refresh, context: context),
+                title: const Text('重新扫描'),
+                subtitle: Text('已入库 ${library.works.length} 个作品'),
+                onTap: () => _rescan(context),
+              ),
+              ListTile(
+                leading:
+                    _LeadingIcon(icon: Icons.pie_chart_outline, context: context),
+                title: const Text('存储统计'),
+                onTap: () => _showStats(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: UiSpacing.medium),
           _SettingsCard(
             title: '外观',
             children: [
@@ -97,6 +133,63 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ],
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 扫描根目录管理（多目录增删，PRD §5.10）。
+  Future<void> _openRootsManager(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => const _RootsManagerSheet(),
+    );
+  }
+
+  Future<void> _rescan(BuildContext context) async {
+    final library = context.read<LibraryProvider>();
+    if (library.roots.isEmpty) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (context) => const FolderPickerScreen(),
+        ),
+      );
+      return;
+    }
+    unawaited(library.rescan());
+  }
+
+  Future<void> _showStats(BuildContext context) async {
+    final library = context.read<LibraryProvider>();
+    final stats = await library.stats();
+    if (!context.mounted || stats == null) return;
+
+    final gb = stats.totalBytes / (1024 * 1024 * 1024);
+    final mb = stats.totalBytes / (1024 * 1024);
+    final sizeText = gb >= 1
+        ? '${gb.toStringAsFixed(2)} GB'
+        : '${mb.toStringAsFixed(1)} MB';
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('存储统计'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _StatRow(label: '作品数', value: '${stats.workCount}'),
+            _StatRow(label: '音轨数', value: '${stats.trackCount}'),
+            _StatRow(label: '已关联歌词', value: '${stats.lyricCount}'),
+            _StatRow(label: '无封面作品', value: '${stats.noCoverCount}'),
+            _StatRow(label: '音频总容量', value: sizeText),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
           ),
         ],
       ),
@@ -204,6 +297,99 @@ class _LeadingIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(UiRadii.control),
       ),
       child: Icon(icon, color: scheme.onPrimaryContainer),
+    );
+  }
+}
+
+class _StatRow extends StatelessWidget {
+  const _StatRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: UiSpacing.xSmall),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(color: scheme.onSurfaceVariant)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 扫描根目录管理 Sheet（顶圆角 20dp，全局 BottomSheet 主题）。
+class _RootsManagerSheet extends StatelessWidget {
+  const _RootsManagerSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final library = context.watch<LibraryProvider>();
+    final scheme = Theme.of(context).colorScheme;
+
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(UiSpacing.medium),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text('扫描根目录',
+                      style: Theme.of(context).textTheme.titleMedium),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (context) => const FolderPickerScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('添加'),
+                ),
+              ],
+            ),
+          ),
+          if (library.roots.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(UiSpacing.large),
+              child: Text(
+                '尚未添加扫描根目录。\n扫描引擎会穿透下钻所有层级子目录，\n发现以 RJ 号命名的作品文件夹。',
+                textAlign: TextAlign.center,
+                style: UiTextStyles.supporting
+                    .copyWith(color: scheme.onSurfaceVariant),
+              ),
+            )
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 300),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: library.roots.length,
+                itemBuilder: (context, index) => ListTile(
+                  leading: const Icon(Icons.folder),
+                  title: Text(library.roots[index]),
+                  dense: true,
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    tooltip: '移除',
+                    onPressed: () => library.removeRoot(library.roots[index]),
+                  ),
+                ),
+              ),
+            ),
+          const SizedBox(height: UiSpacing.medium),
+        ],
+      ),
     );
   }
 }

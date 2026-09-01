@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- M8 本地扫描：文件路径直访（PRD §7 允许的存储访问回退路径） -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <!-- Android 13+ 本地播放器通行做法：所有文件访问（仅本地扫描使用） -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
     <!-- M12 在线模块 / M11 元数据拉取（PRD §7：本地模块全部功能不依赖网络） -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- 后台播放前台服务（M5 通知栏媒体控制） -->

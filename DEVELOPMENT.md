@@ -35,7 +35,7 @@ flutter test                  # 中文路径下正常
 | 里程碑 | 状态 | 说明 |
 |---|---|---|
 | M1 主框架 + 主题 + 迷你播放条 + 全屏播放器 | **已完成（代码级）** | 2026-09-01：analyze 零问题、单测 9/9、debug APK 构建通过；真机/模拟器视觉比对（验收 #1/#2/#5/#13）待执行 |
-| M2 本地识别引擎 + 数据库 + 封面墙 + 详情页 | 未开始 | M8 + M3 + M4 + M10 |
+| M2 本地识别引擎 + 数据库 + 封面墙 + 详情页 | **已完成（代码级）** | 2026-09-01：analyze 零问题、单测 41/41（含扫描器集成测试）、debug APK 构建通过；MuMu 模拟器实测待执行 |
 | M3 在线模块 + 下载即入库 | 未开始 | M12 |
 | M4 元数据补全 + 搜索 + 我的 | 未开始 | M11 + M6 + M7 |
 | M5 歌词字幕全功能 + 悬浮歌词 + 性能 | 未开始 | M5 完整版 |
@@ -63,3 +63,59 @@ flutter test                  # 中文路径下正常
 - [ ] 连接 Android 设备/模拟器运行，执行验收 #1/#2/#5 视觉比对
 - [ ] 验收 #13 歌词 seek 联动专项（拖动/快进快退/越界/通知栏 seek 四用例）
 - [ ] 悬浮歌词位置的实际手感复核（玻璃降级参数微调）
+
+## 已实现内容（M2，2026-09-01）
+
+**M8 本地识别引擎**
+- `services/scan_rules.dart`：纯逻辑规则层 —— RJ 正则（RJ/BJ/VJ × 6~8 位，表层优先）、
+  文件分类、同名自动关联（同名 → 唯一单音轨兜底）、封面 5 级降级链挑选、
+  数字感知自然排序、小音轨过滤、编码嗅探（UTF-8 → Shift-JIS/GBK 评分选优：
+  假名加分 / 半角片假名强减分）
+- `services/local_library_scanner.dart`：穿透扫描引擎 —— 递归下钻任意层级发现 RJ 文件夹；
+  RJ 仲裁（①表层文件夹名 > ②metadata.json > ③内部文件兜底）；嵌套 RJ 不重复入库；
+  根目录散落音频按父目录聚合；音轨时长提取（audio_metadata_reader，失败标未知）；
+  内嵌封面提取落盘；metadata.json Kikoeru 格式字段映射
+
+**M10 存储层**
+- `services/local_library_database.dart`：sqflite（works + file_nodes 两表，
+  级联删除、root_path 唯一索引、存储统计、时长回写接口）
+- `providers/library_provider.dart`：根目录管理（SharedPreferences 持久化）、
+  扫描进度/取消、排序、移出库、同社团推荐
+- `services/storage_permission.dart`：权限策略（≤Android 12 READ_EXTERNAL_STORAGE；
+  13+ 回退 MANAGE_EXTERNAL_STORAGE）
+
+**M3 封面墙**
+- `widgets/enhanced_work_card.dart`：三变体卡片（中卡 1.3 / 紧凑卡 1.0 / 全卡 80×80），
+  本地优先字段，NetMeta 未缓存行自动隐藏
+- `screens/works_screen.dart`：瀑布流（大网格 2/3/4 列、小网格 3/5 列、间距 8/24）、
+  悬浮工具栏（视图切换/排序/重扫）、扫描进度视图、空态引导直接选目录、随机播放
+- `utils/responsive_grid_helper.dart`：窗口断点（compact/medium/expanded/large）
+
+**M4 详情页**
+- `screens/work_detail_screen.dart`：封面 r12 Hero、标题 16sp 完整换行、本地文件信息、
+  可折叠文件树、同社团推荐位（190dp/120dp）、播放全部/移出库
+- `widgets/file_tree_view.dart`：缩进 20dp、目录展开收起、音轨行（序号/两行名称/
+  时长/歌词字幕图标）
+- `screens/folder_picker_screen.dart`：应用内目录浏览器（从 /storage/emulated/0 开始）
+- 我的页本地库 Tab（210dp extent / 0.72 网格）；设置页本地库管理（根目录增删/
+  重新扫描/存储统计）
+
+**播放联动**
+- 点文件树音轨 → 整作品队列播放，音轨名/封面/歌词全部走本地值
+
+## M2 决策记录（与 PRD 的偏差）
+
+1. **扫描目录访问**：PRD 验收 #17 要求 SAF + 持久化 URI；M2 实现为
+   文件路径直访（PRD §7 允许的回退路径）+ 应用内目录选择器。
+   原因：SAF content URI 对 just_audio 播放/封面读取/万级文件遍历性能复杂度高；
+   MuMu（Android 12）上 READ_EXTERNAL_STORAGE 即完整可用。
+   SAF 正式接入排在后续里程碑（需引入 `saf` 包并做 URI→播放源适配）。
+2. **重扫策略**：M2 为全量重建（works/file_nodes 整体替换）；增量扫描
+   （mtime/size 检测）与播放进度/手动关联保留排 M4。
+
+## M2 待办（模拟器实测）
+
+- [ ] MuMu 安装 app-debug.apk，验证：授权 → 选根目录 → 扫描 → 封面墙 → 详情页 →
+      文件树点音轨播放 → 歌词联动
+- [ ] 用真实 RJ 文件夹结构抽样验证识别率（验收 #11：≥95%）
+- [ ] 视觉比对验收 #3/#4/#8（封面墙列数间距、详情页区块、我的页）

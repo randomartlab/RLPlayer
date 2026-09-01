@@ -1,0 +1,310 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../models/work.dart';
+import '../providers/audio_provider.dart';
+import '../providers/library_provider.dart';
+import '../utils/playback_helpers.dart';
+import '../utils/ui_tokens.dart';
+import '../widgets/enhanced_work_card.dart';
+import '../widgets/file_tree_view.dart';
+import 'audio_player_screen.dart';
+
+/// 本地作品详情页（PRD §5.5，骨架 = OfflineWorkDetailScreen + WorkDetailScreen
+/// 视觉规格；网络参考区 M4 里程碑引入，当前页面 100% 本地信息）。
+class WorkDetailScreen extends StatefulWidget {
+  const WorkDetailScreen({super.key, required this.work});
+
+  final Work work;
+
+  @override
+  State<WorkDetailScreen> createState() => _WorkDetailScreenState();
+}
+
+class _WorkDetailScreenState extends State<WorkDetailScreen> {
+  List<FileNode> _nodes = const [];
+  bool _fileTreeExpanded = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNodes();
+  }
+
+  Future<void> _loadNodes() async {
+    final library = context.read<LibraryProvider>();
+    final nodes = await library.nodesOf(widget.work);
+    if (mounted) {
+      setState(() => _nodes = nodes);
+    }
+  }
+
+  Future<void> _playFrom(int trackIndex) async {
+    final audio = context.read<AudioPlayerProvider>();
+    final tracks = tracksOf(widget.work, _nodes);
+    if (tracks.isEmpty) return;
+    await audio.playTracks(tracks, initialIndex: trackIndex);
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => const AudioPlayerScreen(),
+      ),
+    );
+  }
+
+  Future<void> _confirmRemove() async {
+    final library = context.read<LibraryProvider>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('移出本地库'),
+        content: Text('「${widget.work.title}」将从本地库移除（不删除源文件）。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('移出'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await library.removeWork(widget.work);
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  String? _formatTotalDuration(int? seconds) {
+    if (seconds == null) return null;
+    if (seconds < 3600) return '${seconds ~/ 60} 分钟';
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    return m > 0 ? '$h 小时 $m 分钟' : '$h 小时';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final work = widget.work;
+    final library = context.watch<LibraryProvider>();
+    final related = library.relatedWorks(work);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(work.rjCode ?? '本地作品'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.play_circle_outline),
+            tooltip: '播放全部',
+            onPressed: () => unawaited(_playFrom(0)),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'remove') unawaited(_confirmRemove());
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'remove',
+                child: Text('移出本地库'),
+              ),
+            ],
+          ),
+        ],
+      ),
+      body: ListView(
+        key: const PageStorageKey('work_detail_${0}'),
+        padding: const EdgeInsets.fromLTRB(
+            UiSpacing.large, UiSpacing.small, UiSpacing.large, UiSpacing.xLarge),
+        children: [
+          // ① 封面框：r12，Hero tag = work_cover_${id}。
+          Center(
+            child: Hero(
+              tag: 'work_cover_${work.id}',
+              child: SizedBox(
+                width: 220,
+                height: 220,
+                child: WorkCover(
+                  work: work,
+                  borderRadius: UiRadii.list,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: UiSpacing.large),
+
+          // ② 标题行：16sp 自适应换行完整显示（§4.7 强约束：无 ellipsis）。
+          Text(
+            work.title,
+            style: Theme.of(context)
+                .textTheme
+                .titleLarge
+                ?.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
+            maxLines: null,
+            overflow: TextOverflow.visible,
+          ),
+          const SizedBox(height: UiSpacing.small),
+
+          // ③ 本地文件信息（RJ 号、文件数、总时长、本地路径）。
+          _InfoRow(label: work.rjCode ?? '未识别 RJ 号', icon: Icons.tag),
+          const SizedBox(height: UiSpacing.xSmall),
+          _InfoRow(
+            label: '${work.trackCount} 个音轨'
+                '${_formatTotalDuration(work.durationSeconds) != null ? ' · ${_formatTotalDuration(work.durationSeconds)}' : ''}'
+                '${work.hasLyric ? ' · 含歌词' : ''}'
+                '${work.hasSubtitle ? ' · 含字幕' : ''}',
+            icon: Icons.music_note_outlined,
+          ),
+          const SizedBox(height: UiSpacing.xSmall),
+          _InfoRow(label: work.rootPath, icon: Icons.folder_outlined),
+          if (work.circleName != null) ...[
+            const SizedBox(height: UiSpacing.xSmall),
+            _InfoRow(label: work.circleName!, icon: Icons.group_outlined),
+          ],
+
+          const SizedBox(height: UiSpacing.large),
+
+          // ⑩ 文件树（可折叠）。
+          _SectionHeader(
+            title: '文件',
+            trailing: IconButton(
+              icon: Icon(
+                _fileTreeExpanded
+                    ? Icons.expand_less
+                    : Icons.expand_more,
+              ),
+              onPressed: () =>
+                  setState(() => _fileTreeExpanded = !_fileTreeExpanded),
+            ),
+          ),
+          if (_fileTreeExpanded)
+            FileTreeView(
+              nodes: _nodes,
+              onTrackTap: (index, node) => unawaited(_playFrom(index)),
+            ),
+
+          const SizedBox(height: UiSpacing.large),
+
+          // ⑪ 推荐位：横向滚动卡片列，高 190dp，卡片宽 120dp
+          // （内容源：同社团/同标签的其他本地作品，PRD §5.5）。
+          if (related.isNotEmpty) ...[
+            _SectionHeader(title: '相关推荐'),
+            SizedBox(
+              height: 190,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: related.length,
+                separatorBuilder: (context, index) =>
+                    const SizedBox(width: UiSpacing.medium),
+                itemBuilder: (context, index) => _RelatedCard(
+                  work: related[index],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.label, required this.icon});
+
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: UiIconSize.standard, color: scheme.onSurfaceVariant),
+        const SizedBox(width: UiSpacing.small),
+        Expanded(
+          child: Text(
+            label,
+            style: UiTextStyles.supporting.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title, this.trailing});
+
+  final String title;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: UiSpacing.small),
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+          ),
+        ),
+        ?trailing,
+      ],
+    );
+  }
+}
+
+class _RelatedCard extends StatelessWidget {
+  const _RelatedCard({required this.work});
+
+  final Work work;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 120,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (context) => WorkDetailScreen(work: work),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(UiRadii.control),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 0.72,
+              child: WorkCover(work: work),
+            ),
+            const SizedBox(height: UiSpacing.xSmall),
+            Text(
+              work.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, height: 1.3),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

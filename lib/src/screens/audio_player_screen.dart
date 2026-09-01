@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../models/audio_track.dart';
 import '../models/lyric.dart';
 import '../providers/audio_provider.dart';
+import '../services/scan_rules.dart';
 import '../utils/ui_tokens.dart';
 import '../widgets/player/lyric_view.dart';
 
@@ -72,11 +73,15 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
       return;
     }
     try {
-      final content = lyricPath.startsWith('asset:')
-          ? await rootBundle.loadString(
-              lyricPath.substring('asset:'.length))
-          : await File(lyricPath).readAsString();
-      _lyricController.lyrics = Lyrics.parse(content);
+      // 编码嗅探：UTF-8 → Shift-JIS → GBK（PRD §5.9.2）。
+      final bytes = lyricPath.startsWith('asset:')
+          ? (await rootBundle.load(lyricPath.substring('asset:'.length)))
+              .buffer
+              .asInt8List()
+          : await File(lyricPath).readAsBytes();
+      final content = decodeTextWithFallback(bytes);
+      _lyricController.lyrics =
+          content == null ? null : Lyrics.parse(content);
     } catch (_) {
       _lyricController.lyrics = null;
     }

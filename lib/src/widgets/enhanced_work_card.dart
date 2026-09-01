@@ -1,0 +1,391 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+
+import '../models/work.dart';
+import '../utils/ui_tokens.dart';
+
+/// 作品卡片三变体（KikoFlu `enhanced_work_card.dart` 移植 + 本地化改造，
+/// PRD §5.4 / UI 规范 §4.1）。
+///
+/// - 中卡（大网格/封面墙）：封面 AspectRatio 1.3 + 信息区；
+/// - 紧凑卡（小网格）：封面 1.0 正方形 + 单行标题（§4.7 例外条款）；
+/// - 全卡（列表模式）：80×80 封面 + 右侧两行信息。
+///
+/// 信息区字段本地优先（PRD §5.4）：标题必有；社团名有则显示；
+/// 总时长 + 音轨数必有；评分/CV/标签行仅 NetMeta 已缓存时显示（M4 引入，
+/// 未缓存时整行隐藏，卡片自动收拢不留空白）。
+class WorkCardVariant {
+  const WorkCardVariant._();
+
+  static const double compactCoverRatio = 1.0;
+  static const double mediumCoverRatio = 1.3;
+  static const double listCoverSize = 80;
+}
+
+enum WorkCardSize { compact, medium, list }
+
+class EnhancedWorkCard extends StatelessWidget {
+  const EnhancedWorkCard({
+    super.key,
+    required this.work,
+    required this.onTap,
+    this.size = WorkCardSize.medium,
+    this.onLongPress,
+  });
+
+  final Work work;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final WorkCardSize size;
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (size) {
+      WorkCardSize.compact => _CompactCard(work: work, onTap: onTap),
+      WorkCardSize.list => _ListCard(
+          work: work,
+          onTap: onTap,
+          onLongPress: onLongPress,
+        ),
+      WorkCardSize.medium => _MediumCard(
+          work: work,
+          onTap: onTap,
+          onLongPress: onLongPress,
+        ),
+    };
+  }
+}
+
+/// 封面（本地文件直读；占位 = primaryContainer 渐变 + RJ 号文字）。
+class WorkCover extends StatelessWidget {
+  const WorkCover({
+    super.key,
+    required this.work,
+    this.borderRadius = 8,
+    this.fit = BoxFit.cover,
+  });
+
+  final Work work;
+  final double borderRadius;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final coverPath = work.coverPath;
+
+    if (coverPath != null && work.coverSource != CoverSource.placeholder) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: Image.file(
+          File(coverPath),
+          fit: fit,
+          cacheWidth: 640,
+          errorBuilder: (context, error, stackTrace) =>
+              _placeholder(scheme),
+        ),
+      );
+    }
+    return _placeholder(scheme);
+  }
+
+  Widget _placeholder(ColorScheme scheme) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(borderRadius),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            scheme.primaryContainer,
+            scheme.secondaryContainer,
+          ],
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        work.rjCode ?? work.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: scheme.onPrimaryContainer,
+          fontSize: UiTextStyles.supporting.fontSize,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+}
+
+/// 时长角标：右下角，tag 圆角 4dp，黑色半透明背景（UI 规范 §4.1）。
+class _DurationBadge extends StatelessWidget {
+  const _DurationBadge({required this.text});
+
+  final String? text;
+
+  @override
+  Widget build(BuildContext context) {
+    if (text == null) return const SizedBox.shrink();
+    return Positioned(
+      right: UiSpacing.xSmall,
+      bottom: UiSpacing.xSmall,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(UiRadii.tag),
+        ),
+        child: Text(
+          text!,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            height: 1.2,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// RJ 号标签：左下角，tag 圆角 4dp。
+class _RjBadge extends StatelessWidget {
+  const _RjBadge({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: UiSpacing.xSmall,
+      bottom: UiSpacing.xSmall,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(UiRadii.tag),
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            height: 1.2,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String? _formatDuration(int? seconds) {
+  if (seconds == null) return null;
+  if (seconds < 3600) {
+    return '${seconds ~/ 60}分钟';
+  }
+  return '${seconds ~/ 3600}小时${(seconds % 3600) ~/ 60}分';
+}
+
+// ---- 中卡（大网格 / 封面墙）----
+
+class _MediumCard extends StatelessWidget {
+  const _MediumCard({required this.work, required this.onTap, this.onLongPress});
+
+  final Work work;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      borderRadius: BorderRadius.circular(UiRadii.control),
+      child: Padding(
+        padding: const EdgeInsets.all(UiSpacing.xSmall + 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 封面 AspectRatio 1.3 + Hero 转场（tag 与详情页一致）。
+            Hero(
+              tag: 'work_cover_${work.id}',
+              child: AspectRatio(
+                aspectRatio: WorkCardVariant.mediumCoverRatio,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    WorkCover(work: work),
+                    _RjBadge(text: work.rjCode ?? '本地'),
+                    _DurationBadge(text: _formatDuration(work.durationSeconds)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: UiSpacing.xSmall),
+            // 标题：本地值（metadata.json > 文件夹名）。
+            Text(
+              work.title,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            // 社团名：本地有则显示；均无隐藏该行（不留空白）。
+            if (work.circleName != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                work.circleName!,
+                style: TextStyle(
+                  fontSize: UiTextStyles.supporting.fontSize,
+                  color: scheme.onSurfaceVariant,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 2),
+            // 总时长 + 音轨数（必有，本地扫描；替代原版价格字段）。
+            Text(
+              '${_formatDuration(work.durationSeconds) ?? '时长未知'} · ${work.trackCount} 轨',
+              style: TextStyle(
+                fontSize: UiTextStyles.supporting.fontSize,
+                color: scheme.onSurfaceVariant,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            // 评分/CV/标签行：NetMeta 未缓存整行隐藏（M4 引入）。
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---- 紧凑卡（小网格）----
+
+class _CompactCard extends StatelessWidget {
+  const _CompactCard({required this.work, required this.onTap});
+
+  final Work work;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(UiRadii.control),
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: WorkCardVariant.compactCoverRatio,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  WorkCover(work: work),
+                  _RjBadge(text: work.rjCode ?? '本地'),
+                ],
+              ),
+            ),
+            const SizedBox(height: UiSpacing.xSmall),
+            // 标题 11sp 单行省略（§4.7 卡片例外条款；点入详情必见完整名称）。
+            Text(
+              work.title,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---- 全卡（列表模式）----
+
+class _ListCard extends StatelessWidget {
+  const _ListCard({
+    required this.work,
+    required this.onTap,
+    this.onLongPress,
+  });
+
+  final Work work;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      borderRadius: BorderRadius.circular(UiRadii.list),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: UiSpacing.medium,
+          vertical: UiSpacing.small,
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: WorkCardVariant.listCoverSize,
+              height: WorkCardVariant.listCoverSize,
+              child: Hero(
+                tag: 'work_cover_${work.id}',
+                child: WorkCover(work: work),
+              ),
+            ),
+            const SizedBox(width: UiSpacing.medium),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 标题 13.5sp，两行省略。
+                  Text(
+                    work.title,
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    [
+                      if (work.circleName != null) work.circleName!,
+                      if (work.rjCode != null) work.rjCode!,
+                      '${work.trackCount} 轨',
+                      if (work.durationSeconds != null)
+                        _formatDuration(work.durationSeconds)!,
+                    ].join(' · '),
+                    style: TextStyle(
+                      fontSize: UiTextStyles.supporting.fontSize,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}

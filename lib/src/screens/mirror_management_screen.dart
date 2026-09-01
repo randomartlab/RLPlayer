@@ -229,7 +229,9 @@ class _MirrorManagementScreenState extends State<MirrorManagementScreen> {
                   RadioGroup<String>(
                     groupValue: mirror.activeHost,
                     onChanged: (host) {
-                      if (!mirror.autoSelect && host != null) {
+                      if (host != null) {
+                        // 用户手动选镜像 = 关闭自动选优 + 固定（实机反馈：
+                        // 之前被 autoSelect 守卫挡住导致点不了）。
                         mirror.pinMirror(host);
                       }
                     },

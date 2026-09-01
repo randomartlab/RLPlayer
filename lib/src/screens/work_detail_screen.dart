@@ -114,18 +114,21 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     }
   }
 
-  Future<void> _playFrom(int trackIndex) async {
+  /// 按节点精确定位播放（实机 bug 修复：视觉序号 ≠ DB 序号导致点任何
+  /// 音轨都播第一个；改为按 track.id 匹配，不依赖顺序）。
+  Future<void> _playFromNode(FileNode node) async {
     final audio = context.read<AudioPlayerProvider>();
     final tracks = tracksOf(widget.work, _nodes);
     if (tracks.isEmpty) return;
-    // 零延迟：先跳转播放器，音源后台加载（播放器自带 loading 态）。
+    final index = tracks
+        .indexWhere((t) => t.id == 'node_${node.id}')
+        .clamp(0, tracks.length - 1);
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => const AudioPlayerScreen(),
       ),
     );
-    final index = trackIndex.clamp(0, tracks.length - 1);
     unawaited(audio.playTracks(tracks, initialIndex: index));
   }
 
@@ -176,7 +179,9 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           IconButton(
             icon: const Icon(Icons.play_circle_outline),
             tooltip: '播放全部',
-            onPressed: () => unawaited(_playFrom(0)),
+            onPressed: () => unawaited(_playFromNode(_nodes.firstWhere(
+                  (n) => !n.isDirectory,
+                  orElse: () => _nodes.first))),
           ),
           PopupMenuButton<String>(
             onSelected: (value) {
@@ -340,7 +345,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           _SectionHeader(title: '文件'),
           FileTreeView(
             nodes: _nodes,
-            onTrackTap: (index, node) => unawaited(_playFrom(index)),
+            onTrackTap: (node) => unawaited(_playFromNode(node)),
             onTrackLongPress: (node) =>
                 showAddToPlaylistDialog(context, work, node),
           ),

@@ -222,7 +222,7 @@ class _LyricViewState extends State<LyricView> {
           },
           child: Padding(
           key: _keyFor(index),
-          padding: const EdgeInsets.symmetric(vertical: UiSpacing.medium),
+          padding: const EdgeInsets.symmetric(vertical: UiSpacing.xSmall),
           child: Container(
             padding: const EdgeInsets.symmetric(
               horizontal: UiSpacing.medium,

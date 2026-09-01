@@ -20,8 +20,8 @@ class FileTreeView extends StatefulWidget {
   /// 已排序的节点列表（目录在前）。
   final List<FileNode> nodes;
 
-  /// 点击音轨回调（参数：节点在列表中的音轨序号 + 节点）。
-  final void Function(int trackIndex, FileNode node) onTrackTap;
+  /// 点击音轨回调（参数：节点对象；索引由调用方按 track.id 精确定位）。
+  final void Function(FileNode node) onTrackTap;
 
   /// 长按音轨回调（加入播放列表入口，PRD §5.5 文件树长按操作）。
   final void Function(FileNode node)? onTrackLongPress;
@@ -99,7 +99,7 @@ class _FileTreeViewState extends State<FileTreeView> {
               node: node,
               depth: _depthOf(node),
               ordinal: ++trackOrdinal,
-              onTap: () => widget.onTrackTap(trackOrdinal - 1, node),
+              onTap: () => widget.onTrackTap(node),
               onLongPress: widget.onTrackLongPress != null
                   ? () => widget.onTrackLongPress!(node)
                   : null,

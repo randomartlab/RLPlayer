@@ -164,7 +164,9 @@ class SettingsScreen extends StatelessWidget {
                 leading: _LeadingIcon(
                     icon: Icons.dark_mode_outlined, context: context),
                 title: const Text('主题模式'),
-                trailing: SegmentedButton<AppThemeMode>(
+                // SegmentedButton 放 subtitle 位（下方独立行）：
+                // 大字体下不再挤压 leading/标题区（实机反馈适配修复）。
+                subtitle: SegmentedButton<AppThemeMode>(
                   segments: const [
                     ButtonSegment(value: AppThemeMode.system, label: Text('跟随')),
                     ButtonSegment(value: AppThemeMode.light, label: Text('亮色')),

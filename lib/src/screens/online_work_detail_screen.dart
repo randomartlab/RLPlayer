@@ -71,7 +71,6 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
 
   /// 流媒体播放：整作品队列（与本地播放共用内核，PRD §5.12）。
   Future<void> _playFrom(int startIndex) async {
-    final online = context.read<OnlineProvider>();
     final mirror = context.read<MirrorProvider>();
     final audio = context.read<AudioPlayerProvider>();
     final detail = _detail;
@@ -79,7 +78,7 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
 
     final nodes = _tracks == null
         ? <OnlineFileNode>[]
-        : online.flattenAudioNodes(_tracks!);
+        : _OnlineFileTree.flatten(_tracks!);
     final tracks = <AudioTrack>[];
     for (final node in nodes) {
       try {
@@ -88,7 +87,7 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
           title: _stripExtension(node.title),
           artist: detail.title,
           source: mirror.api.nodeStreamUrl(node),
-          artworkPath: null, // 在线封面走 URL，播放器 M3 显示占位
+          artworkUrl: mirror.api.coverUrl(detail.id),
         ));
       } catch (_) {
         continue; // 缺 hash 的节点跳过。
@@ -277,6 +276,8 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
                     else if (_tracks != null && _tracks!.isNotEmpty)
                       _OnlineFileTree(
                         nodes: _tracks!,
+                        flatAudioNodes:
+                            _OnlineFileTree.flatten(_tracks!),
                         onTrackTap: (index) => unawaited(_playFrom(index)),
                       ),
                   ],
@@ -351,12 +352,40 @@ class _InfoLine extends StatelessWidget {
   }
 }
 
-/// 在线文件树（目录可折叠；音轨行点按流播）。
+/// 在线文件树（目录可折叠；展开内容紧跟所属文件夹，音轨行点按流播）。
 class _OnlineFileTree extends StatefulWidget {
-  const _OnlineFileTree({required this.nodes, required this.onTrackTap});
+  const _OnlineFileTree({
+    required this.nodes,
+    required this.onTrackTap,
+    this.depth = 0,
+    required this.flatAudioNodes,
+  });
 
   final List<OnlineFileNode> nodes;
   final void Function(int trackIndex) onTrackTap;
+
+  /// 嵌套深度（缩进用）。
+  final int depth;
+
+  /// 整棵树扁平化后的音轨列表（根实例计算，逐层透传；序号与播放队列一致）。
+  final List<OnlineFileNode> flatAudioNodes;
+
+  /// 扁平化音轨（树前序遍历）。
+  static List<OnlineFileNode> flatten(List<OnlineFileNode> nodes) {
+    final out = <OnlineFileNode>[];
+    void walk(List<OnlineFileNode> list) {
+      for (final n in list) {
+        if (n.isFolder) {
+          walk(n.children);
+        } else if (n.isAudio) {
+          out.add(n);
+        }
+      }
+    }
+
+    walk(nodes);
+    return out;
+  }
 
   @override
   State<_OnlineFileTree> createState() => _OnlineFileTreeState();
@@ -368,20 +397,27 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
   @override
   void initState() {
     super.initState();
-    for (final node in widget.nodes) {
-      if (node.isFolder) _expanded.add(node.title);
+    // 顶层目录默认展开。
+    if (widget.depth == 0) {
+      for (final node in widget.nodes) {
+        if (node.isFolder) _expanded.add(node.title);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final indent = widget.depth * 20.0;
+
     return Column(
       children: [
         for (final node in widget.nodes)
-          if (node.isFolder)
+          if (node.isFolder) ...[
+            // 文件夹行：点按切换展开。
             ListTile(
               dense: true,
+              contentPadding: EdgeInsets.only(left: 16 + indent, right: 16),
               leading: Icon(
                 _expanded.contains(node.title)
                     ? Icons.folder_open
@@ -401,65 +437,36 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
                     ? _expanded.remove(node.title)
                     : _expanded.add(node.title);
               }),
-            )
-          else if (node.isAudio)
-            Builder(builder: (context) {
-              final index = _audioOrdinal(node);
-              return ListTile(
-                dense: true,
-                leading: SizedBox(
-                  width: UiIconSize.large,
-                  child: Text('$index',
-                      textAlign: TextAlign.center,
-                      style: UiTextStyles.supporting
-                          .copyWith(color: scheme.onSurfaceVariant)),
-                ),
-                title: Text(node.title,
-                    maxLines: 2, overflow: TextOverflow.ellipsis),
-                trailing: const Icon(Icons.play_circle_outline),
-                onTap: () => widget.onTrackTap(_globalAudioIndex(node)),
-              );
-            }),
-        // 展开的目录渲染子树。
-        for (final node in widget.nodes)
-          if (node.isFolder && _expanded.contains(node.title))
-            Padding(
-              padding: const EdgeInsets.only(left: UiSpacing.large),
-              child: _OnlineFileTree(
+            ),
+            // 展开的子树紧随其后（递归内联）。
+            if (_expanded.contains(node.title) && node.children.isNotEmpty)
+              _OnlineFileTree(
                 nodes: node.children,
                 onTrackTap: widget.onTrackTap,
+                depth: widget.depth + 1,
+                flatAudioNodes: widget.flatAudioNodes,
               ),
+          ] else if (node.isAudio)
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.only(left: 16 + indent, right: 16),
+              leading: Icon(Icons.music_note_outlined,
+                  size: UiIconSize.large, color: scheme.onSurfaceVariant),
+              title: Text(
+                _stripExt(node.title),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: const Icon(Icons.play_circle_outline),
+              onTap: () =>
+                  widget.onTrackTap(widget.flatAudioNodes.indexOf(node)),
             ),
       ],
     );
   }
 
-  /// 目录内序号（简化：用于展示）。
-  int _audioOrdinal(OnlineFileNode node) {
-    var i = 0;
-    for (final n in widget.nodes) {
-      if (n.isAudio) {
-        i++;
-        if (identical(n, node)) return i;
-      }
-    }
-    return i;
-  }
-
-  /// 全局音轨序号（与播放队列一致）：扁平展开后的位置。
-  int _globalAudioIndex(OnlineFileNode node) {
-    void collect(List<OnlineFileNode> nodes, List<OnlineFileNode> out) {
-      for (final n in nodes) {
-        if (n.isFolder) {
-          collect(n.children, out);
-        } else if (n.isAudio) {
-          out.add(n);
-        }
-      }
-    }
-
-    final flat = <OnlineFileNode>[];
-    collect(widget.nodes, flat);
-    return flat.indexOf(node);
+  String _stripExt(String name) {
+    final dot = name.lastIndexOf('.');
+    return dot > 0 ? name.substring(0, dot) : name;
   }
 }

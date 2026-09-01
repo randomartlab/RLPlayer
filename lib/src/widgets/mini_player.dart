@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart' show ProcessingState;
 import 'package:provider/provider.dart';
@@ -236,6 +237,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
   }
 
   Widget _buildArtwork(BuildContext context, String? artworkPath) {
+    final track = context.read<AudioPlayerProvider>().currentTrack;
+    final artworkUrl = track?.artworkUrl;
     final scheme = Theme.of(context).colorScheme;
     Widget image = Container(
       width: 48,
@@ -254,10 +257,22 @@ class _MiniPlayerState extends State<MiniPlayer> {
                     const Icon(Icons.album, size: 32),
               ),
             )
-          : const Icon(Icons.album, size: 32),
+          : artworkUrl != null
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(UiRadii.control),
+                  child: CachedNetworkImage(
+                    imageUrl: artworkUrl,
+                    fit: BoxFit.cover,
+                    width: 48,
+                    height: 48,
+                    placeholder: (context, url) => const SizedBox.shrink(),
+                    errorWidget: (context, url, error) =>
+                        const Icon(Icons.album, size: 32),
+                  ),
+                )
+              : const Icon(Icons.album, size: 32),
     );
 
-    final track = context.read<AudioPlayerProvider>().currentTrack;
     return Hero(
       tag: 'audio_player_artwork_${track?.id ?? 'none'}',
       child: image,

@@ -23,8 +23,11 @@ class OnlineWorksScreen extends StatefulWidget {
   State<OnlineWorksScreen> createState() => _OnlineWorksScreenState();
 }
 
+enum _OnlineViewMode { large, small, list }
+
 class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
   final ScrollController _scrollController = ScrollController();
+  _OnlineViewMode _viewMode = _OnlineViewMode.large;
 
   static const _orders = [
     ('release', '发行日'),
@@ -66,25 +69,53 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
 
     return Column(
       children: [
-        // 排序 chips + 当前镜像提示。
+        // 工具行：视图切换（大网格/小网格/列表，对齐 KikoFlu 卡片模式）+ 排序 chips。
         Padding(
           padding: const EdgeInsets.fromLTRB(
               UiSpacing.medium, UiSpacing.xSmall, UiSpacing.medium, 0),
           child: SizedBox(
             height: UiControlSize.standard,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
+            child: Row(
               children: [
-                for (final (value, label) in _orders)
-                  Padding(
-                    padding: const EdgeInsets.only(right: UiSpacing.small),
-                    child: FilterChip(
-                      label: Text(label),
-                      selected: online.order == value,
-                      onSelected: (_) => online.setOrder(value),
-                      visualDensity: VisualDensity.compact,
-                    ),
+                _ViewModeIcon(
+                  icon: Icons.grid_view,
+                  selected: _viewMode == _OnlineViewMode.large,
+                  tooltip: '大网格',
+                  onTap: () =>
+                      setState(() => _viewMode = _OnlineViewMode.large),
+                ),
+                _ViewModeIcon(
+                  icon: Icons.grid_view_outlined,
+                  selected: _viewMode == _OnlineViewMode.small,
+                  tooltip: '小网格',
+                  onTap: () =>
+                      setState(() => _viewMode = _OnlineViewMode.small),
+                ),
+                _ViewModeIcon(
+                  icon: Icons.view_list_outlined,
+                  selected: _viewMode == _OnlineViewMode.list,
+                  tooltip: '列表',
+                  onTap: () =>
+                      setState(() => _viewMode = _OnlineViewMode.list),
+                ),
+                const VerticalDivider(width: 1, indent: 12, endIndent: 12),
+                Expanded(
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      for (final (value, label) in _orders)
+                        Padding(
+                          padding: const EdgeInsets.only(right: UiSpacing.small),
+                          child: FilterChip(
+                            label: Text(label),
+                            selected: online.order == value,
+                            onSelected: (_) => online.setOrder(value),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                    ],
                   ),
+                ),
               ],
             ),
           ),
@@ -160,14 +191,36 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    if (_viewMode == _OnlineViewMode.list) {
+      return RefreshIndicator(
+        onRefresh: () => online.refresh(),
+        child: ListView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.symmetric(vertical: UiSpacing.small),
+          itemCount: online.works.length + (online.hasMore ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index >= online.works.length) {
+              return const Padding(
+                padding: EdgeInsets.all(UiSpacing.large),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            return _OnlineWorkCard(
+                work: online.works[index], mode: CardMode.list);
+          },
+        ),
+      );
+    }
+
+    final small = _viewMode == _OnlineViewMode.small;
     return RefreshIndicator(
       onRefresh: () => online.refresh(),
       child: GridView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.all(UiSpacing.small),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 0.62,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: small ? 3 : 2,
+          childAspectRatio: small ? 0.72 : 0.62,
           mainAxisSpacing: UiSpacing.small,
           crossAxisSpacing: UiSpacing.small,
         ),
@@ -181,153 +234,300 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
               ),
             );
           }
-          return _OnlineWorkCard(work: online.works[index]);
+          return _OnlineWorkCard(
+              work: online.works[index],
+              mode: small ? CardMode.compact : CardMode.medium);
         },
       ),
     );
   }
 }
 
-/// 在线作品卡片（中卡规格：封面 1.3 + 信息区）。
+/// 在线作品卡片三变体（对齐本地墙 / KikoFlu 卡片模式）。
+enum CardMode { compact, medium, list }
+
 class _OnlineWorkCard extends StatelessWidget {
-  const _OnlineWorkCard({required this.work});
+  const _OnlineWorkCard({required this.work, this.mode = CardMode.medium});
 
   final OnlineWork work;
+  final CardMode mode;
 
   @override
   Widget build(BuildContext context) {
+    return switch (mode) {
+      CardMode.compact => _CompactCard(work: work),
+      CardMode.list => _ListCard(work: work),
+      CardMode.medium => _MediumCard(work: work),
+    };
+  }
+}
+
+mixin _OnlineCardBase {
+  Widget coverStack(BuildContext context, OnlineWork work,
+      {double? aspectRatio, double? width, double? height}) {
     final online = context.watch<OnlineProvider>();
     final mirror = context.read<MirrorProvider>();
     final scheme = Theme.of(context).colorScheme;
     final downloaded = online.downloadedRjCodes.contains(work.rjCode);
 
-    return InkWell(
-      onTap: () => _openDetail(context),
+    Widget cover = _cover(context, mirror, work);
+
+    if (aspectRatio != null) {
+      cover = AspectRatio(aspectRatio: aspectRatio, child: cover);
+    } else if (width != null && height != null) {
+      cover = SizedBox(width: width, height: height, child: cover);
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        cover,
+        Positioned(
+          left: UiSpacing.xSmall,
+          bottom: UiSpacing.xSmall,
+          child: _badge(work.rjCode),
+        ),
+        if (work.nsfw)
+          Positioned(
+            right: UiSpacing.xSmall,
+            bottom: UiSpacing.xSmall,
+            child: _badge('R18', color: scheme.error),
+          ),
+        if (downloaded)
+          Positioned(
+            right: UiSpacing.xSmall,
+            top: UiSpacing.xSmall,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(UiRadii.tag),
+              ),
+              child: const Text('已下载',
+                  style: TextStyle(
+                      color: Colors.white, fontSize: 10, height: 1.2)),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _cover(BuildContext context, MirrorProvider mirror, OnlineWork work) {
+    final scheme = Theme.of(context).colorScheme;
+    return ClipRRect(
       borderRadius: BorderRadius.circular(UiRadii.control),
-      child: Padding(
-        padding: const EdgeInsets.all(UiSpacing.small - 2),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AspectRatio(
-              aspectRatio: 1.3,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(UiRadii.control),
-                    child: CachedNetworkImage(
-                      imageUrl: mirror.api.coverUrl(work.id),
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(
-                        color: scheme.surfaceContainerHighest,
-                      ),
-                      errorWidget: (context, url, error) => Container(
-                        color: scheme.surfaceContainerHighest,
-                        child: Icon(Icons.album,
-                            color: scheme.onSurfaceVariant),
-                      ),
-                    ),
-                  ),
-                  // RJ 号角标。
-                  Positioned(
-                    left: UiSpacing.xSmall,
-                    bottom: UiSpacing.xSmall,
-                    child: _badge(context, work.rjCode),
-                  ),
-                  // 已下载角标（PRD §5.12：点击直接进入本地版）。
-                  if (downloaded)
-                    Positioned(
-                      right: UiSpacing.xSmall,
-                      top: UiSpacing.xSmall,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 5, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: scheme.primary.withValues(alpha: 0.9),
-                          borderRadius:
-                              BorderRadius.circular(UiRadii.tag),
-                        ),
-                        child: const Text(
-                          '已下载',
-                          style: TextStyle(
-                              color: Colors.white, fontSize: 10, height: 1.2),
-                        ),
-                      ),
-                    ),
-                  if (work.nsfw)
-                    Positioned(
-                      right: UiSpacing.xSmall,
-                      bottom: UiSpacing.xSmall,
-                      child: _badge(context, 'R18',
-                          color: scheme.error),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: UiSpacing.xSmall),
-            Text(
-              work.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-            if (work.circleName != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                work.circleName!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: UiTextStyles.supporting.fontSize,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-            const SizedBox(height: 2),
-            Text(
-              [
-                if (work.release != null)
-                  '${work.release!.year}-${work.release!.month.toString().padLeft(2, '0')}-${work.release!.day.toString().padLeft(2, '0')}',
-                if (work.averageRating != null)
-                  '★${work.averageRating!.toStringAsFixed(1)}',
-                if (work.dlCount != null) '${work.dlCount} 销量',
-              ].join(' · '),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: UiTextStyles.supporting.fontSize,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ],
+      child: CachedNetworkImage(
+        imageUrl: mirror.api.coverUrl(work.id),
+        fit: BoxFit.cover,
+        placeholder: (context, url) =>
+            Container(color: scheme.surfaceContainerHighest),
+        errorWidget: (context, url, error) => Container(
+          color: scheme.surfaceContainerHighest,
+          child: Icon(Icons.album, color: scheme.onSurfaceVariant),
         ),
       ),
     );
   }
 
-  Widget _badge(BuildContext context, String text, {Color? color}) {
+  Widget _badge(String text, {Color? color}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
       decoration: BoxDecoration(
         color: (color ?? Colors.black).withValues(alpha: 0.75),
         borderRadius: BorderRadius.circular(UiRadii.tag),
       ),
-      child: Text(
-        text,
-        style: const TextStyle(
-            color: Colors.white, fontSize: 10, height: 1.2,
-            fontWeight: FontWeight.w500),
-      ),
+      child: Text(text,
+          style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              height: 1.2,
+              fontWeight: FontWeight.w500)),
     );
   }
 
-  void _openDetail(BuildContext context) {
+  String dateLabel(OnlineWork work) {
+    final r = work.release;
+    if (r == null) return '';
+    return '${r.year}-${r.month.toString().padLeft(2, '0')}-${r.day.toString().padLeft(2, '0')}';
+  }
+
+  void openDetail(BuildContext context, OnlineWork work) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => OnlineWorkDetailScreen(work: work),
       ),
+    );
+  }
+}
+
+/// 中卡（大网格）：封面 1.3 + 标题/社团/评分行。
+class _MediumCard extends StatelessWidget with _OnlineCardBase {
+  _MediumCard({required this.work});
+
+  final OnlineWork work;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: () => openDetail(context, work),
+      borderRadius: BorderRadius.circular(UiRadii.control),
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: coverStack(context, work, aspectRatio: 1.3)),
+            const SizedBox(height: UiSpacing.xSmall),
+            Text(work.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+            if (work.circleName != null) ...[
+              const SizedBox(height: 2),
+              Text(work.circleName!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 12,
+                      height: 1.3,
+                      color: scheme.onSurfaceVariant)),
+            ],
+            const SizedBox(height: 2),
+            Text(
+              [
+                if (work.averageRating != null)
+                  '★${work.averageRating!.toStringAsFixed(1)}',
+                if (work.dlCount != null) '${work.dlCount}',
+                dateLabel(work),
+              ].where((s) => s.isNotEmpty).join(' · '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: 12, height: 1.3, color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 紧凑卡（小网格）：正方形封面 + 单行标题。
+class _CompactCard extends StatelessWidget with _OnlineCardBase {
+  _CompactCard({required this.work});
+
+  final OnlineWork work;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => openDetail(context, work),
+      borderRadius: BorderRadius.circular(UiRadii.control),
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: coverStack(context, work, aspectRatio: 1.0)),
+            const SizedBox(height: UiSpacing.xSmall),
+            Text(work.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 全卡（列表行）：80×80 封面 + 两行信息。
+class _ListCard extends StatelessWidget with _OnlineCardBase {
+  _ListCard({required this.work});
+
+  final OnlineWork work;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: () => openDetail(context, work),
+      borderRadius: BorderRadius.circular(UiRadii.list),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+            horizontal: UiSpacing.medium, vertical: UiSpacing.small),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 80,
+              height: 80,
+              child: coverStack(context, work, width: 80, height: 80),
+            ),
+            const SizedBox(width: UiSpacing.medium),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(work.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 13.5, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 2),
+                  Text(
+                    [
+                      if (work.circleName != null) work.circleName!,
+                      work.rjCode,
+                      if (work.averageRating != null)
+                        '★${work.averageRating!.toStringAsFixed(1)}',
+                      if (work.dlCount != null) '${work.dlCount} 销量',
+                      dateLabel(work),
+                    ].join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 12,
+                        height: 1.3,
+                        color: scheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 工具栏视图切换按钮。
+class _ViewModeIcon extends StatelessWidget {
+  const _ViewModeIcon({
+    required this.icon,
+    required this.selected,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final bool selected;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return IconButton(
+      icon: Icon(icon),
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      color: selected ? scheme.primary : scheme.onSurfaceVariant,
+      onPressed: onTap,
     );
   }
 }

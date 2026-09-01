@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -264,7 +265,22 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                   ),
                 ),
               )
-            : Center(
+            : track?.artworkUrl != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(UiRadii.card),
+                    child: CachedNetworkImage(
+                      imageUrl: track!.artworkUrl!,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => const SizedBox.shrink(),
+                      errorWidget: (context, url, error) => Center(
+                        child: Text(
+                          track.id,
+                          style: TextStyle(color: scheme.onPrimaryContainer),
+                        ),
+                      ),
+                    ),
+                  )
+                : Center(
                 // 占位封面：主题色 primaryContainer 渐变 + 作品号文字（PRD §5.5）。
                 child: Text(
                   track?.id ?? '',

@@ -5,12 +5,14 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart' show LoopMode;
+import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 
 import '../models/audio_track.dart';
 import '../models/lyric.dart';
 import '../providers/audio_provider.dart';
 import '../services/scan_rules.dart';
+import '../services/subtitle_parser.dart';
 import '../utils/ui_tokens.dart';
 import '../widgets/player/lyric_view.dart';
 import '../widgets/player/playlist_dialog.dart';
@@ -71,8 +73,22 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
   Future<void> _loadLyricsForCurrentTrack() async {
     final track = context.read<AudioPlayerProvider>().currentTrack;
     final lyricPath = track?.lyricPath;
+
+    // 本地无 lrc 时回退在线字幕（vtt/srt，在线播放自动匹配）。
     if (lyricPath == null) {
-      _lyricController.lyrics = null;
+      final subtitleUrl = track?.subtitleUrl;
+      if (subtitleUrl != null) {
+        try {
+          final response = await Dio().get<String>(subtitleUrl);
+          final text = response.data;
+          final parsed = text == null ? null : parseVttOrSrt(text);
+          if (mounted) setState(() => _lyricController.lyrics = parsed);
+        } catch (_) {
+          if (mounted) setState(() => _lyricController.lyrics = null);
+        }
+      } else {
+        _lyricController.lyrics = null;
+      }
       return;
     }
     try {

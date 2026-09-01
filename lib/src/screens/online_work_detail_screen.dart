@@ -98,36 +98,95 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
   }
 
   /// 流媒体播放：整作品队列（与本地播放共用内核，PRD §5.12）。
+  /// 音轨自动匹配在线字幕（KikoFlu SubtitleMatcher 规则：字幕名去字幕
+  /// 扩展 + 音频扩展后与音频基础名相同即命中）。
   Future<void> _playFrom(int startIndex) async {
     final mirror = context.read<MirrorProvider>();
     final audio = context.read<AudioPlayerProvider>();
     final detail = _detail;
-    if (detail == null) return;
+    if (detail == null || _tracks == null) return;
 
-    final nodes = _tracks == null
-        ? <OnlineFileNode>[]
-        : _OnlineFileTree.flatten(_tracks!);
+    final audioNodes = _OnlineFileTree.flatten(_tracks!);
+    final subtitleNodes = _flattenByExts(
+        _tracks!, const {'.vtt', '.srt', '.lrc', '.txt'});
+
     final tracks = <AudioTrack>[];
-    for (final node in nodes) {
+    for (final node in audioNodes) {
       try {
+        final subtitle = _matchSubtitle(node, subtitleNodes);
         tracks.add(AudioTrack(
           id: 'online_${detail.id}_${node.title}',
           title: _stripExtension(node.title),
           artist: detail.title,
           source: mirror.api.nodeStreamUrl(node),
           artworkUrl: mirror.api.coverUrl(detail.id),
+          subtitleUrl: subtitle != null
+              ? mirror.api.nodeStreamUrl(subtitle)
+              : null,
         ));
       } catch (_) {
         continue; // 缺 hash 的节点跳过。
       }
     }
     if (tracks.isEmpty) return;
-    await audio.playTracks(tracks, initialIndex: startIndex);
+    // 单击即播：先跳转播放器，加载在后台进行（避免网络加载阻塞导航）。
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
           builder: (context) => const AudioPlayerScreen()),
     );
+    final index = startIndex.clamp(0, tracks.length - 1);
+    unawaited(audio.playTracks(tracks, initialIndex: index));
+  }
+
+  List<OnlineFileNode> _flattenByExts(
+      List<OnlineFileNode> nodes, Set<String> exts) {
+    final result = <OnlineFileNode>[];
+    void walk(List<OnlineFileNode> list) {
+      for (final n in list) {
+        if (n.isFolder) {
+          walk(n.children);
+        } else if (n.title.contains('.') &&
+            exts.contains(
+                n.title.substring(n.title.lastIndexOf('.')).toLowerCase())) {
+          result.add(n);
+        }
+      }
+    }
+
+    walk(nodes);
+    return result;
+  }
+
+  /// 字幕匹配（KikoFlu SubtitleMatcher）：'歌名.mp3.vtt' → '歌名'，
+  /// 与音频 '歌名.mp3' → '歌名' 相同即命中。
+  OnlineFileNode? _matchSubtitle(
+      OnlineFileNode audio, List<OnlineFileNode> subtitles) {
+    final audioBase = _stripAudioExt(audio.title.toLowerCase());
+    for (final subtitle in subtitles) {
+      var name = subtitle.title.toLowerCase();
+      for (final ext in const ['.vtt', '.srt', '.lrc', '.txt']) {
+        if (name.endsWith(ext)) {
+          name = name.substring(0, name.length - ext.length);
+          break;
+        }
+      }
+      final subBase = _stripAudioExt(name);
+      if (audioBase.isNotEmpty && audioBase == subBase) return subtitle;
+    }
+    return null;
+  }
+
+  String _stripAudioExt(String name) {
+    for (final ext in const [
+      '.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg', '.opus', '.wma',
+      '.mp4', '.m4b',
+    ]) {
+      if (name.endsWith(ext)) {
+        return name.substring(0, name.length - ext.length);
+      }
+    }
+    return name;
   }
 
   String _stripExtension(String name) {

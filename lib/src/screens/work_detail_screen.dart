@@ -17,6 +17,7 @@ import '../widgets/enhanced_work_card.dart';
 import '../widgets/file_tree_view.dart';
 import 'audio_player_screen.dart';
 import 'online_work_detail_screen.dart';
+import 'playlists_screen.dart' show showAddToPlaylistDialog;
 import 'tag_filter_screen.dart';
 
 /// 本地作品详情页（PRD §5.5，骨架 = OfflineWorkDetailScreen + WorkDetailScreen
@@ -334,6 +335,8 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           FileTreeView(
             nodes: _nodes,
             onTrackTap: (index, node) => unawaited(_playFrom(index)),
+            onTrackLongPress: (node) =>
+                showAddToPlaylistDialog(context, work, node),
           ),
 
           // ⑪ 推荐位：本地同社团在前 + asmr.one 同社团网络推荐补充

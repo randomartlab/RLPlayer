@@ -14,6 +14,7 @@ class FileTreeView extends StatefulWidget {
     super.key,
     required this.nodes,
     required this.onTrackTap,
+    this.onTrackLongPress,
   });
 
   /// 已排序的节点列表（目录在前）。
@@ -21,6 +22,9 @@ class FileTreeView extends StatefulWidget {
 
   /// 点击音轨回调（参数：节点在列表中的音轨序号 + 节点）。
   final void Function(int trackIndex, FileNode node) onTrackTap;
+
+  /// 长按音轨回调（加入播放列表入口，PRD §5.5 文件树长按操作）。
+  final void Function(FileNode node)? onTrackLongPress;
 
   @override
   State<FileTreeView> createState() => _FileTreeViewState();
@@ -96,6 +100,9 @@ class _FileTreeViewState extends State<FileTreeView> {
               depth: _depthOf(node),
               ordinal: ++trackOrdinal,
               onTap: () => widget.onTrackTap(trackOrdinal - 1, node),
+              onLongPress: widget.onTrackLongPress != null
+                  ? () => widget.onTrackLongPress!(node)
+                  : null,
             ),
       ],
     );
@@ -162,18 +169,21 @@ class _TrackRow extends StatelessWidget {
     required this.depth,
     required this.ordinal,
     required this.onTap,
+    this.onLongPress,
   });
 
   final FileNode node;
   final int depth;
   final int ordinal;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(UiRadii.list),
       child: Padding(
         padding: EdgeInsets.only(

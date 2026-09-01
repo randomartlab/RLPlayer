@@ -9,6 +9,7 @@ import 'src/providers/download_provider.dart';
 import 'src/providers/library_provider.dart';
 import 'src/providers/mirror_provider.dart';
 import 'src/providers/online_provider.dart';
+import 'src/providers/playlist_provider.dart';
 import 'src/providers/theme_mode.dart';
 import 'src/providers/theme_provider.dart';
 import 'src/providers/ui_settings_provider.dart';
@@ -92,6 +93,14 @@ class KikoLocalApp extends StatelessWidget {
                         ? NetMetaService(
                             mirror: mirror, db: library.database)
                         : previous!,
+              ),
+              ChangeNotifierProxyProvider2<LibraryProvider,
+                  AudioPlayerProvider, PlaylistProvider>(
+                create: (context) => PlaylistProvider(
+                  library: context.read<LibraryProvider>(),
+                  audio: context.read<AudioPlayerProvider>(),
+                ),
+                update: (context, library, audio, previous) => previous!,
               ),
               ChangeNotifierProxyProvider<LibraryProvider, DownloadProvider>(
                 create: (context) {

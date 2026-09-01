@@ -16,7 +16,7 @@ class LocalLibraryDatabase {
   LocalLibraryDatabase._(this._db);
 
   static const String _dbName = 'kiko_local.db';
-  static const int _dbVersion = 5;
+  static const int _dbVersion = 6;
 
   final Database _db;
 
@@ -25,6 +25,18 @@ class LocalLibraryDatabase {
       p.join(await getDatabasesPath(), _dbName),
       version: _dbVersion,
       onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 6) {
+          // 播放列表（M7，PRD §5.8）。
+          await db.execute(
+              'CREATE TABLE playlists (id INTEGER PRIMARY KEY AUTOINCREMENT, '
+              'name TEXT NOT NULL, description TEXT, created_at INTEGER NOT NULL)');
+          await db.execute(
+              'CREATE TABLE playlist_items (id INTEGER PRIMARY KEY AUTOINCREMENT, '
+              'playlist_id INTEGER NOT NULL, work_id INTEGER, node_id INTEGER, '
+              'track_key TEXT NOT NULL, track_title TEXT NOT NULL, work_title TEXT, '
+              'cover_path TEXT, sort_index INTEGER NOT NULL, '
+              'FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE)');
+        }
         if (oldVersion < 2) {
           await db.execute('''
             CREATE TABLE net_meta (
@@ -477,6 +489,79 @@ class LocalLibraryDatabase {
       _db.delete('play_history', where: 'track_key = ?', whereArgs: [trackKey]);
 
   Future<void> clearHistory() => _db.delete('play_history');
+
+  // ---- 播放列表（M7，PRD §5.8） ----
+
+  Future<int> insertPlaylist(String name, {String? description}) async {
+    return _db.insert('playlists', {
+      'name': name,
+      'description': description,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  Future<void> renamePlaylist(int id, String name,
+      {String? description}) async {
+    await _db.update(
+        'playlists',
+        {
+          'name': name,
+          if (description != null) 'description': description,
+        },
+        where: 'id = ?',
+        whereArgs: [id]);
+  }
+
+  Future<void> deletePlaylist(int id) async {
+    await _db.delete('playlist_items',
+        where: 'playlist_id = ?', whereArgs: [id]);
+    await _db.delete('playlists', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<List<Map<String, Object?>>> queryPlaylists() async {
+    return _db.rawQuery('''
+      SELECT p.*, COUNT(i.id) AS item_count
+      FROM playlists p LEFT JOIN playlist_items i ON i.playlist_id = p.id
+      GROUP BY p.id ORDER BY p.created_at DESC
+    ''');
+  }
+
+  Future<List<Map<String, Object?>>> queryPlaylistItems(
+      int playlistId) async {
+    return _db.query('playlist_items',
+        where: 'playlist_id = ?',
+        whereArgs: [playlistId],
+        orderBy: 'sort_index ASC');
+  }
+
+  Future<void> addPlaylistItem(
+      int playlistId, Map<String, Object?> item) async {
+    final maxRow = await _db.rawQuery(
+        'SELECT MAX(sort_index) AS m FROM playlist_items '
+        'WHERE playlist_id = ?',
+        [playlistId]);
+    final next = ((maxRow.first['m'] as int?) ?? -1) + 1;
+    await _db.insert('playlist_items', {
+      ...item,
+      'playlist_id': playlistId,
+      'sort_index': next,
+    });
+  }
+
+  Future<void> removePlaylistItem(int itemId) async {
+    await _db
+        .delete('playlist_items', where: 'id = ?', whereArgs: [itemId]);
+  }
+
+  Future<void> reorderPlaylistItems(
+      int playlistId, List<int> orderedItemIds) async {
+    await _db.transaction((txn) async {
+      for (var i = 0; i < orderedItemIds.length; i++) {
+        await txn.update('playlist_items', {'sort_index': i},
+            where: 'id = ?', whereArgs: [orderedItemIds[i]]);
+      }
+    });
+  }
 
   Future<void> close() => _db.close();
 }

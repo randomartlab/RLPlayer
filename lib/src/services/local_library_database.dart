@@ -506,7 +506,7 @@ class LocalLibraryDatabase {
         'playlists',
         {
           'name': name,
-          if (description != null) 'description': description,
+          'description': ?description,
         },
         where: 'id = ?',
         whereArgs: [id]);

@@ -40,7 +40,7 @@ Future<void> main() async {
       builder: AudioPlayerHandler.new,
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'dev.kikolocal.channel.audio',
-        androidNotificationChannelName: 'KikoLocal 播放',
+        androidNotificationChannelName: 'RLPlayer 播放',
         androidNotificationOngoing: true,
         androidStopForegroundOnPause: true,
       ),
@@ -135,7 +135,7 @@ class KikoLocalApp extends StatelessWidget {
                     ColorSchemeType.dynamic;
 
                 return MaterialApp(
-                  title: 'KikoLocal',
+                  title: 'RLPlayer',
                   debugShowCheckedModeBanner: false,
                   // 全局字体缩放（用户设置，叠加系统缩放；上限 2.0 与 PRD §4.7 一致）。
                   builder: (context, child) {

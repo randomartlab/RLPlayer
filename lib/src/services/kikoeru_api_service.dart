@@ -157,7 +157,7 @@ class KikoeruApiService {
       'order': order,
       'sort': sort,
       'subtitle': subtitle ?? 0,
-      if (nsfw != null) 'nsfw': nsfw,
+      'nsfw': ?nsfw,
     });
     final data = response.data as Map<String, dynamic>;
     final pagination = (data['pagination'] ?? {}) as Map<String, dynamic>;

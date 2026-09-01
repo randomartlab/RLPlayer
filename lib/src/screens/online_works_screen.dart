@@ -268,13 +268,9 @@ mixin _OnlineCardBase {
 
     Widget cover = _cover(context, mirror, work);
 
-    if (aspectRatio != null) {
-      cover = AspectRatio(aspectRatio: aspectRatio, child: cover);
-    } else if (width != null && height != null) {
-      cover = SizedBox(width: width, height: height, child: cover);
-    }
-
-    return Stack(
+    // 定尺寸容器在外（masonry 需要子项有固有尺寸），Stack 在内 expand 填满。
+    // 修复白屏：裸 Stack 在无界高度约束下抛布局异常。
+    final stack = Stack(
       fit: StackFit.expand,
       children: [
         cover,
@@ -306,6 +302,15 @@ mixin _OnlineCardBase {
             ),
           ),
       ],
+    );
+
+    if (aspectRatio != null) {
+      return AspectRatio(aspectRatio: aspectRatio, child: stack);
+    }
+    return SizedBox(
+      width: width ?? 80,
+      height: height ?? 80,
+      child: stack,
     );
   }
 

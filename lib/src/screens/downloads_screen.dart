@@ -59,7 +59,9 @@ class _DownloadTaskTile extends StatelessWidget {
 
     final statusText = switch (task.status) {
       DownloadStatus.queued => '排队中',
-      DownloadStatus.running => '下载中 ${(task.progress * 100).toInt()}%',
+      DownloadStatus.running => task.progress > 0
+          ? '下载中 ${(task.progress * 100).toInt()}%'
+          : '下载中 ${_formatBytes(task.receivedBytes)}',
       DownloadStatus.completed => '已完成',
       DownloadStatus.failed => '失败',
       DownloadStatus.cancelled => '已取消',
@@ -85,7 +87,8 @@ class _DownloadTaskTile extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: LinearProgressIndicator(
-                value: task.progress,
+                // 无 Content-Length 时显示不确定进度条。
+                value: task.progress > 0 ? task.progress : null,
                 minHeight: 4,
               ),
             ),
@@ -129,4 +132,11 @@ class _DownloadTaskTile extends StatelessWidget {
           color: scheme.onSurfaceVariant),
     };
   }
+}
+
+
+String _formatBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+  return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
 }

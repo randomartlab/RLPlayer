@@ -141,10 +141,8 @@ class _DirectoryRow extends StatelessWidget {
             Expanded(
               child: Text(
                 node.name,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w500),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w500, fontSize: 15),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -183,19 +181,18 @@ class _TrackRow extends StatelessWidget {
         padding: EdgeInsets.only(
           left: UiSpacing.large + depth * 20.0,
           right: UiSpacing.medium,
-          top: UiSpacing.small + 2,
-          bottom: UiSpacing.small + 2,
+          top: UiSpacing.medium,
+          bottom: UiSpacing.medium,
         ),
         child: Row(
           children: [
             SizedBox(
-              width: UiIconSize.large,
+              width: 28,
               child: Text(
                 '$ordinal',
                 textAlign: TextAlign.center,
-                style: UiTextStyles.supporting.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: TextStyle(
+                    fontSize: 14, color: scheme.onSurfaceVariant),
               ),
             ),
             const SizedBox(width: UiSpacing.medium),
@@ -206,19 +203,21 @@ class _TrackRow extends StatelessWidget {
                   // 文件名：两行自适应换行（§4.7 完整名称保障）。
                   Text(
                     node.displayName,
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(fontSize: 15),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Row(
                     children: [
                       if (node.durationSeconds != null)
                         Text(
                           _formatDuration(node.durationSeconds!),
-                          style: UiTextStyles.supporting.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
+                          style: TextStyle(
+                              fontSize: 13, color: scheme.onSurfaceVariant),
                         ),
                       if (node.durationSeconds != null &&
                           (node.lyricPath != null || node.subtitlePath != null))

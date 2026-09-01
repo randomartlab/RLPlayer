@@ -153,6 +153,17 @@ class KikoeruApiService {
 
   // ---- 媒体 URL（token 走查询参数，播放器无需 Authorization header） ----
 
+  /// 下载封面字节（网络封面兜底落盘用）。
+  Future<List<int>?> downloadCover(int workId) async {
+    try {
+      final response = await _dio.get<List<int>>(coverUrl(workId),
+          options: Options(responseType: ResponseType.bytes));
+      return response.data;
+    } catch (_) {
+      return null;
+    }
+  }
+
   String coverUrl(int workId) =>
       '$_host/api/cover/$workId${_token != null && _token!.isNotEmpty ? '?token=$_token' : ''}';
 

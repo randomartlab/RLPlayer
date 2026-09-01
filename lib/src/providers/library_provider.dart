@@ -152,6 +152,21 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 重新读取单个作品（封面兜底回写后刷新显示）。
+  Future<Work?> reloadWork(int workId) async {
+    final db = _db;
+    if (db == null) return null;
+    final fresh = await db.queryWork(workId);
+    if (fresh != null) {
+      final index = _works.indexWhere((w) => w.id == workId);
+      if (index >= 0) {
+        _works[index] = fresh;
+        notifyListeners();
+      }
+    }
+    return fresh;
+  }
+
   Future<List<FileNode>> nodesOf(Work work) async {
     final db = _db;
     if (db == null) return const [];

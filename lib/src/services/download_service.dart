@@ -35,7 +35,8 @@ class DownloadTask {
   final String relativePath;
 
   DownloadStatus status;
-  double progress; // 0~1
+  double progress; // 0~1（无 Content-Length 时保持 0，由 receivedBytes 展示）
+  int receivedBytes = 0;
   String? error;
 
   String get workDirName => 'RJ${workId.toString().padLeft(6, '0')}';
@@ -156,10 +157,11 @@ class DownloadService {
           validateStatus: (status) => status != null && status < 500,
         ),
         onReceiveProgress: (received, total) {
+          task.receivedBytes = received;
           if (total > 0) {
             task.progress = received / total;
-            _notify();
           }
+          _notify();
         },
       );
       task.status = DownloadStatus.completed;

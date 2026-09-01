@@ -31,6 +31,9 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
   NetMeta? _netMeta;
   bool _netMetaLoading = false;
 
+  /// 封面兜底回写后的最新作品对象（覆盖 widget.work 显示）。
+  Work? _workOverride;
+
   @override
   void initState() {
     super.initState();
@@ -55,9 +58,18 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
       final meta = await context
           .read<NetMetaService>()
           .getMeta(rjCode, forceRefresh: forceRefresh);
-      if (mounted) setState(() => _netMeta = meta);
-    } catch (_) {
-      // 网络参考 best-effort：失败静默不显示（PRD 决策 4）。
+      if (mounted) {
+        // 网络封面可能已落盘回写（PRD 封面降级链），重新读作品对象刷新显示。
+        final fresh =
+            await context.read<LibraryProvider>().reloadWork(widget.work.id);
+        setState(() {
+          _netMeta = meta;
+          if (fresh != null) _workOverride = fresh;
+        });
+      }
+    } catch (e) {
+      // 网络参考 best-effort：失败静默不显示（PRD 决策 4）；但记录原因便于诊断。
+      debugPrint('[NetMeta] 详情页拉取失败: $e');
     } finally {
       if (mounted) setState(() => _netMetaLoading = false);
     }
@@ -112,7 +124,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final work = widget.work;
+    final work = _workOverride ?? widget.work;
     final library = context.watch<LibraryProvider>();
     final related = library.relatedWorks(work);
 

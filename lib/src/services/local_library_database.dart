@@ -310,6 +310,21 @@ class LocalLibraryDatabase {
     );
   }
 
+  /// 网络封面兜底落盘后更新作品封面（PRD §5.11 封面降级链第 3 级）。
+  Future<void> updateWorkCover(int workId, String coverPath) async {
+    await _db.update('works', {
+      'cover_path': coverPath,
+      'cover_source': 'network',
+    }, where: 'id = ?', whereArgs: [workId]);
+  }
+
+  /// 按 RJ 号查作品 id（封面兜底定位）。
+  Future<int?> queryWorkIdByRj(String rjCode) async {
+    final rows = await _db.query('works',
+        columns: ['id'], where: 'rj_code = ?', whereArgs: [rjCode], limit: 1);
+    return rows.isEmpty ? null : rows.first['id'] as int;
+  }
+
   // ---- NetMeta 缓存（M11） ----
 
   Future<NetMeta?> queryNetMeta(String rjCode) async {

@@ -151,7 +151,7 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('已加入下载队列：${detail.rjCode}（${nodes.length} 个文件）'),
+        content: Text('已加入下载队列：${detail.rjCode}（${nodes.length} 个文件），到「我的 → 下载管理」查看进度'),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -487,19 +487,20 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
                 flatAudioNodes: widget.flatAudioNodes,
               ),
           ] else
-            // 全部文件类型都显示（用户反馈：字幕文件必须可见以判断作品附带情况）。
+            // 全部文件类型都显示；非音频保留完整文件名 + 类型徽章（用户反馈：
+            // 「歌名.mp3.vtt」截成「歌名.mp3」会被误认为音频）。
             ListTile(
               dense: true,
               contentPadding: EdgeInsets.only(left: 16 + indent, right: 16),
               leading: _fileIcon(context, node),
               title: Text(
-                _stripExt(node.title),
+                node.isAudio ? _stripExt(node.title) : node.title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
               trailing: node.isAudio
                   ? const Icon(Icons.play_circle_outline)
-                  : null,
+                  : _typeBadge(context, node),
               onTap: node.isAudio
                   ? () => widget.onTrackTap(
                       widget.flatAudioNodes.indexOf(node))
@@ -512,6 +513,33 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
   String _stripExt(String name) {
     final dot = name.lastIndexOf('.');
     return dot > 0 ? name.substring(0, dot) : name;
+  }
+
+  /// 非音频文件类型徽章（颜色区分，用户建议）。
+  Widget _typeBadge(BuildContext context, OnlineFileNode node) {
+    final scheme = Theme.of(context).colorScheme;
+    final ext = node.title.contains('.')
+        ? node.title.substring(node.title.lastIndexOf('.')).toLowerCase()
+        : '';
+    final (label, color) = switch (ext) {
+      '.srt' || '.vtt' => ('字幕', scheme.tertiary),
+      '.lrc' => ('歌词', scheme.tertiary),
+      '.txt' => ('文本', scheme.onSurfaceVariant),
+      '.mp4' || '.mkv' || '.avi' || '.webm' => ('视频', scheme.onSurfaceVariant),
+      '.jpg' || '.png' || '.gif' || '.webp' => ('图片', scheme.onSurfaceVariant),
+      _ => (ext.replaceFirst('.', ''), scheme.onSurfaceVariant),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(UiRadii.tag),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 11, color: color, fontWeight: FontWeight.w500)),
+    );
   }
 
   Widget _fileIcon(BuildContext context, OnlineFileNode node) {

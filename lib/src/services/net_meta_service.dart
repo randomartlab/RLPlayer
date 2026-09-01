@@ -1,6 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../models/net_meta.dart';
+import '../models/work.dart' show CoverSource;
 import 'local_library_database.dart';
 import '../providers/mirror_provider.dart';
 
@@ -33,6 +38,11 @@ class NetMetaService {
     if (!forceRefresh) {
       final cached = await database.queryNetMeta(rjCode);
       if (cached != null) {
+        // 缓存命中也执行封面兜底（历史缓存条目在封面兜底上线前写入，需补齐；
+        // PRD §5.11 封面降级链与元数据缓存相互独立）。
+        if (!cached.noResult) {
+          await _fetchNetworkCover(database, rjCode, cached.workId ?? numeric);
+        }
         // noResult 标记抑制自动重试（手动刷新除外）。
         return cached;
       }
@@ -76,6 +86,8 @@ class NetMetaService {
       });
       await database.upsertNetMeta(meta);
       debugPrint('[NetMeta] asmr.one 命中: $rjCode');
+      // 封面降级链第 3 级：本地无封面 → 网络封面下载落盘（断网后仍可用）。
+      await _fetchNetworkCover(database, rjCode, numeric);
       return meta;
     } catch (e) {
       debugPrint('[NetMeta] asmr.one 未命中: $rjCode ($e)');
@@ -93,6 +105,36 @@ class NetMetaService {
     );
     await database.upsertNetMeta(noResult);
     return noResult;
+  }
+
+  /// 网络封面兜底（PRD §5.11）：仅当本地作品封面为占位时下载落盘并回写。
+  Future<void> _fetchNetworkCover(
+      LocalLibraryDatabase database, String rjCode, int numeric) async {
+    try {
+      final workId = await database.queryWorkIdByRj(rjCode);
+      if (workId == null) return; // 非本地作品（纯在线浏览）不处理。
+
+      final work = await database.queryWork(workId);
+      if (work == null) return;
+      // 本地有任何可用封面（文件/内嵌）时禁止网络封面请求（PRD 验收）。
+      if (work.coverSource != CoverSource.placeholder) return;
+
+      final appDoc = await getApplicationDocumentsDirectory();
+      final coversDir = Directory(p.join(appDoc.path, 'covers', 'network'));
+      await coversDir.create(recursive: true);
+      final file = File(p.join(coversDir.path, '$rjCode.img'));
+
+      if (!await file.exists()) {
+        final bytes = await mirror.api.downloadCover(numeric);
+        if (bytes == null || bytes.length < 100) return;
+        await file.writeAsBytes(bytes);
+      }
+      await database.updateWorkCover(workId, file.path);
+      debugPrint('[NetMeta] 网络封面已落盘: $rjCode');
+    } catch (e) {
+      // 封面兜底 best-effort：失败不影响元数据。
+      debugPrint('[NetMeta] 封面兜底失败: $e');
+    }
   }
 
   /// 缓存清理（设置页入口）。

@@ -173,6 +173,19 @@ class KikoeruApiService {
   String downloadUrl(String hash, String fileName) =>
       '$_host/api/media/download/$hash/$fileName';
 
+  /// 文件节点的下载 URL（优先服务端提供的 mediaDownloadUrl）。
+  String nodeDownloadUrl(OnlineFileNode node) {
+    final mediaDownloadUrl = node.mediaDownloadUrl;
+    if (mediaDownloadUrl != null && mediaDownloadUrl.isNotEmpty) {
+      return mediaDownloadUrl;
+    }
+    final hash = node.hash;
+    if (hash == null || hash.isEmpty) {
+      throw KikoeruApiException('文件缺少 hash，无法下载', null);
+    }
+    return downloadUrl(hash, Uri.encodeComponent(node.title));
+  }
+
   /// 文件节点的流媒体 URL（优先服务端提供的 mediaStreamUrl）。
   String nodeStreamUrl(OnlineFileNode node) {
     final mediaStreamUrl = node.mediaStreamUrl;
@@ -186,13 +199,6 @@ class KikoeruApiService {
     return streamUrl(hash, Uri.encodeComponent(node.title));
   }
 
-  String nodeDownloadUrl(OnlineFileNode node) {
-    final hash = node.hash;
-    if (hash == null || hash.isEmpty) {
-      throw KikoeruApiException('文件缺少 hash，无法下载', null);
-    }
-    return downloadUrl(hash, Uri.encodeComponent(node.title));
-  }
 }
 
 /// 作品列表分页。

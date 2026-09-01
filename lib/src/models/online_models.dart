@@ -79,6 +79,7 @@ class OnlineFileNode {
     this.hash,
     this.size,
     this.mediaStreamUrl,
+    this.mediaDownloadUrl,
     this.children = const [],
   });
 
@@ -90,6 +91,9 @@ class OnlineFileNode {
 
   final int? size;
   final String? mediaStreamUrl;
+
+  /// 服务端提供的完整下载 URL（raw 镜像域名）。
+  final String? mediaDownloadUrl;
   final List<OnlineFileNode> children;
 
   bool get isFolder => type == 'folder';
@@ -103,6 +107,7 @@ class OnlineFileNode {
       hash: json['hash'] as String?,
       size: json['size'] as int?,
       mediaStreamUrl: json['mediaStreamUrl'] as String?,
+      mediaDownloadUrl: json['mediaDownloadUrl'] as String?,
       children: ((json['children'] as List?) ?? const [])
           .map((child) => OnlineFileNode.fromJson(child as Map<String, dynamic>))
           .toList(),

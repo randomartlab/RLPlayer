@@ -48,6 +48,18 @@ class _SearchScreenState extends State<SearchScreen> {
   List<String> _history = const [];
   static const String _historyKey = 'search_history';
 
+  /// 高级筛选（PRD §5.7：有无歌词/字幕、年龄分级）。
+  static const _filters = [
+    ('有歌词', 1),
+    ('有字幕', 2),
+    ('全年龄', 3),
+    ('R18', 4),
+  ];
+  final Set<int> _activeFilters = {};
+
+  /// 排除语法 `$-词$`（PRD §5.7）：命中的作品被剔除。
+  static final _excludeRegex = RegExp(r'\$-([^$]+)\$');
+
   @override
   void initState() {
     super.initState();
@@ -106,46 +118,87 @@ class _SearchScreenState extends State<SearchScreen> {
     final db = library.database;
     final query = _query.toLowerCase();
 
+    // 排除语法：$-词$ 剥离为排除词。
+    final excludes = _excludeRegex
+        .allMatches(_query)
+        .map((m) => m.group(1)!.trim().toLowerCase())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final keyword = _query
+        .replaceAll(_excludeRegex, ' ')
+        .trim()
+        .toLowerCase();
+
     final results = <Work>[];
     for (final work in library.works) {
       var hit = false;
       switch (_conditionType) {
         case 1: // RJ 号（纯数字自动补前缀）。
           final rj =
-              RegExp(r'^\d{5,8}$').hasMatch(query) ? 'rj$query' : query;
+              RegExp(r'^\d{5,8}$').hasMatch(keyword) ? 'rj$keyword' : keyword;
           hit = work.rjCode?.toLowerCase() == rj ||
-              work.rjCode?.toLowerCase().contains(query) == true;
+              work.rjCode?.toLowerCase().contains(keyword) == true;
         case 2: // 标签：works.tags + NetMeta.netTags。
-          hit = work.tags.any((t) => t.toLowerCase().contains(query));
+          hit = work.tags.any((t) => t.toLowerCase().contains(keyword));
           hit = hit ||
               await _netMetaMatch(db, work,
                   (m) => m.netTags.any((t) => t.toLowerCase().contains(query)));
         case 3: // 社团。
-          hit = work.circleName?.toLowerCase().contains(query) ?? false;
+          hit = work.circleName?.toLowerCase().contains(keyword) ?? false;
           hit = hit ||
               await _netMetaMatch(db, work,
                   (m) => m.netCircle?.toLowerCase().contains(query) ?? false);
         case 4: // 声优。
           hit = work.vasNames
-              .any((v) => v.toLowerCase().contains(query));
+              .any((v) => v.toLowerCase().contains(keyword));
           hit = hit ||
               await _netMetaMatch(db, work,
                   (m) => m.netVas.any((v) => v.toLowerCase().contains(query)));
         default: // 关键词：标题/社团 + 音轨名。
-          hit = work.title.toLowerCase().contains(query) ||
-              (work.circleName?.toLowerCase().contains(query) ?? false);
+          hit = work.title.toLowerCase().contains(keyword) ||
+              (work.circleName?.toLowerCase().contains(keyword) ?? false);
           if (!hit) {
             final nodes = await library.nodesOf(work);
             hit = nodes.any((node) =>
                 !node.isDirectory &&
-                node.displayName.toLowerCase().contains(query));
+                node.displayName.toLowerCase().contains(keyword));
           }
+      }
+      // 排除词命中 → 剔除。
+      if (hit && excludes.isNotEmpty) {
+        final blob = [
+          work.title,
+          work.circleName ?? '',
+          work.rjCode ?? '',
+          ...work.vasNames,
+          ...work.tags,
+        ].join(' ').toLowerCase();
+        if (excludes.any((e) => blob.contains(e))) hit = false;
       }
       if (hit) results.add(work);
     }
+
+    // 高级筛选后置（PRD §5.7）。
+    var filtered = results;
+    for (final f in _activeFilters) {
+      filtered = filtered.where((w) {
+        switch (f) {
+          case 1:
+            return w.hasLyric;
+          case 2:
+            return w.hasSubtitle;
+          case 3:
+            return w.nsfw != true;
+          case 4:
+            return w.nsfw == true;
+        }
+        return true;
+      }).toList();
+    }
+    final results2 = filtered;
     if (mounted) {
       setState(() {
-        _results = results;
+        _results = results2;
         _searched = true;
       });
       _saveHistory(_query);
@@ -180,6 +233,35 @@ class _SearchScreenState extends State<SearchScreen> {
                         selected: _conditionType == i,
                         onSelected: (_) {
                           setState(() => _conditionType = i);
+                          _search();
+                        },
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          // 高级筛选 chips（PRD §5.7：有无歌词/字幕、年龄分级）。
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: UiSpacing.medium),
+            child: SizedBox(
+              height: 36,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (final (label, value) in _filters)
+                    Padding(
+                      padding: const EdgeInsets.only(right: UiSpacing.small),
+                      child: FilterChip(
+                        label: Text(label),
+                        selected: _activeFilters.contains(value),
+                        onSelected: (_) {
+                          setState(() {
+                            _activeFilters.contains(value)
+                                ? _activeFilters.remove(value)
+                                : _activeFilters.add(value);
+                          });
                           _search();
                         },
                         visualDensity: VisualDensity.compact,
@@ -310,7 +392,7 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
           const SizedBox(height: UiSpacing.xSmall),
           Text(
-            '完全离线 · 支持作品名 / 音轨名 / RJ 号',
+            '完全离线 · 五条件 + 筛选 · 排除语法 \$-词\$',
             style: UiTextStyles.supporting
                 .copyWith(color: scheme.onSurfaceVariant),
           ),

@@ -71,7 +71,7 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
         setState(() {
           _tracks = tracks;
           _subtitleCount = _countByExt(tracks, const {'.srt', '.vtt'});
-          _lyricCount = _countByExt(tracks, const {'.lrc', '.txt'});
+          _lyricCount = _countByExt(tracks, const {'.lrc'});
         });
       }
     } catch (_) {
@@ -109,8 +109,8 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
     if (detail == null || _tracks == null) return;
 
     final audioNodes = _OnlineFileTree.flatten(_tracks!);
-    final subtitleNodes = _flattenByExts(
-        _tracks!, const {'.vtt', '.srt', '.lrc', '.txt'});
+    final subtitleNodes =
+        _flattenByExts(_tracks!, const {'.vtt', '.srt', '.lrc'});
 
     // 本地库按 RJ 号回填（用户约定：在线播放优先用本地已有的歌词/字幕）。
     final localNodes = await _localNodesForRj(detail.rjCode);
@@ -181,7 +181,7 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
     // （名+音频扩展）——该站字幕命名常态为「歌名.mp3.vtt」「歌名.mp3.lrc」。
     for (final subtitle in subtitles) {
       var name = subtitle.title.toLowerCase();
-      for (final ext in const ['.vtt', '.srt', '.lrc', '.txt']) {
+      for (final ext in const ['.vtt', '.srt', '.lrc']) {
         if (name.endsWith(ext)) {
           name = name.substring(0, name.length - ext.length);
           break;
@@ -205,10 +205,10 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
     return null;
   }
 
-  /// 字幕名双层剥离：先去字幕扩展（.vtt/.srt/.lrc/.txt），再去音频扩展
+  /// 字幕名双层剥离：先去字幕扩展（.vtt/.srt/.lrc），再去音频扩展
   /// （.mp3/.wav/.flac/.m4a 等），得到内容基础名。
   String _stripSubtitleExt(String name) {
-    for (final ext in const ['.vtt', '.srt', '.lrc', '.txt']) {
+    for (final ext in const ['.vtt', '.srt', '.lrc']) {
       if (name.endsWith(ext)) {
         name = name.substring(0, name.length - ext.length);
         break;
@@ -687,7 +687,7 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
       '.mp3' || '.m4a' || '.flac' || '.wav' || '.ogg' || '.opus' =>
         (Icons.music_note_outlined, scheme.primary),
       '.srt' || '.vtt' => (Icons.subtitles_outlined, scheme.tertiary),
-      '.lrc' || '.txt' => (Icons.lyrics_outlined, scheme.tertiary),
+      '.lrc' => (Icons.lyrics_outlined, scheme.tertiary),
       '.mp4' || '.mkv' || '.avi' || '.webm' =>
         (Icons.movie_outlined, scheme.onSurfaceVariant),
       '.jpg' || '.png' || '.gif' || '.webp' =>

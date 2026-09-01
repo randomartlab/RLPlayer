@@ -18,8 +18,9 @@ import '../utils/ui_tokens.dart';
 class WorkCardVariant {
   const WorkCardVariant._();
 
-  static const double compactCoverRatio = 1.0;
-  static const double mediumCoverRatio = 1.3;
+  /// 实测 asmr.one 封面 24/24 为 560×420（4:3 横版，2026-09-01 采集）。
+  static const double compactCoverRatio = 4 / 3;
+  static const double mediumCoverRatio = 4 / 3;
   static const double listCoverSize = 80;
 }
 
@@ -225,11 +226,11 @@ class _MediumCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: UiSpacing.xSmall),
-            // 标题：本地值（metadata.json > 文件夹名）。
+            // 标题：本地值（metadata.json > 文件夹名）。字号放大（用户反馈）。
             Text(
               work.title,
               style: const TextStyle(
-                fontSize: 12,
+                fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
               maxLines: 2,
@@ -241,23 +242,30 @@ class _MediumCard extends StatelessWidget {
               Text(
                 work.circleName!,
                 style: TextStyle(
-                  fontSize: UiTextStyles.supporting.fontSize,
+                  fontSize: 13,
                   color: scheme.onSurfaceVariant,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ],
-            const SizedBox(height: 2),
-            // 总时长 + 音轨数（必有，本地扫描；替代原版价格字段）。
-            Text(
-              '${_formatDuration(work.durationSeconds) ?? '时长未知'} · ${work.trackCount} 轨',
-              style: TextStyle(
-                fontSize: UiTextStyles.supporting.fontSize,
-                color: scheme.onSurfaceVariant,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            const SizedBox(height: 3),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${_formatDuration(work.durationSeconds) ?? '时长未知'} · ${work.trackCount} 轨',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (work.hasSubtitle) _SubtitleBadge(scheme: scheme),
+                if (work.hasLyric) _LyricBadge(scheme: scheme),
+              ],
             ),
             // 评分/CV/标签行：NetMeta 未缓存整行隐藏（M4 引入）。
           ],
@@ -296,11 +304,11 @@ class _CompactCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: UiSpacing.xSmall),
-            // 标题 11sp 单行省略（§4.7 卡片例外条款；点入详情必见完整名称）。
+            // 标题 12sp 单行省略（§4.7 卡片例外条款；点入详情必见完整名称）。
             Text(
               work.title,
               style: const TextStyle(
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
               maxLines: 1,
@@ -353,17 +361,17 @@ class _ListCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 标题 13.5sp，两行省略。
+                  // 标题 15sp，两行省略（字号放大）。
                   Text(
                     work.title,
                     style: const TextStyle(
-                      fontSize: 13.5,
+                      fontSize: 15,
                       fontWeight: FontWeight.w500,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
                     [
                       if (work.circleName != null) work.circleName!,
@@ -373,18 +381,93 @@ class _ListCard extends StatelessWidget {
                         _formatDuration(work.durationSeconds)!,
                     ].join(' · '),
                     style: TextStyle(
-                      fontSize: UiTextStyles.supporting.fontSize,
+                      fontSize: 13,
                       color: scheme.onSurfaceVariant,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (work.hasSubtitle || work.hasLyric)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (work.hasSubtitle) _SubtitleBadge(scheme: scheme),
+                          if (work.hasLyric) _LyricBadge(scheme: scheme),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
             Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
           ],
         ),
+      ),
+    );
+  }
+}
+
+
+/// 含字幕标签（用户反馈：是否带字幕应明确标注）。
+class _SubtitleBadge extends StatelessWidget {
+  const _SubtitleBadge({required this.scheme});
+
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(UiRadii.tag),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.subtitles_outlined,
+              size: 12, color: scheme.onSecondaryContainer),
+          const SizedBox(width: 3),
+          Text('字幕',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: scheme.onSecondaryContainer,
+                  fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 含歌词标签。
+class _LyricBadge extends StatelessWidget {
+  const _LyricBadge({required this.scheme});
+
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(left: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(UiRadii.tag),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.lyrics_outlined,
+              size: 12, color: scheme.onSecondaryContainer),
+          const SizedBox(width: 3),
+          Text('歌词',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: scheme.onSecondaryContainer,
+                  fontWeight: FontWeight.w500)),
+        ],
       ),
     );
   }

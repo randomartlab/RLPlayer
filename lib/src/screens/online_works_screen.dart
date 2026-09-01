@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:provider/provider.dart';
 
 import '../models/online_models.dart';
@@ -215,23 +216,18 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
     final small = _viewMode == _OnlineViewMode.small;
     return RefreshIndicator(
       onRefresh: () => online.refresh(),
-      child: GridView.builder(
+      child: MasonryGridView.count(
         controller: _scrollController,
         padding: const EdgeInsets.all(UiSpacing.small),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: small ? 3 : 2,
-          childAspectRatio: small ? 0.72 : 0.62,
-          mainAxisSpacing: UiSpacing.small,
-          crossAxisSpacing: UiSpacing.small,
-        ),
+        crossAxisCount: small ? 3 : 2,
+        mainAxisSpacing: UiSpacing.small,
+        crossAxisSpacing: UiSpacing.small,
         itemCount: online.works.length + (online.hasMore ? 1 : 0),
         itemBuilder: (context, index) {
           if (index >= online.works.length) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(UiSpacing.large),
-                child: CircularProgressIndicator(),
-              ),
+            return const Padding(
+              padding: EdgeInsets.all(UiSpacing.large),
+              child: Center(child: CircularProgressIndicator()),
             );
           }
           return _OnlineWorkCard(
@@ -378,24 +374,25 @@ class _MediumCard extends StatelessWidget with _OnlineCardBase {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: coverStack(context, work, aspectRatio: 1.3)),
+            // 封面 4:3（实测 asmr.one 封面 560×420，零裁切）。
+            coverStack(context, work, aspectRatio: 4 / 3),
             const SizedBox(height: UiSpacing.xSmall),
             Text(work.title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style:
-                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
             if (work.circleName != null) ...[
               const SizedBox(height: 2),
               Text(work.circleName!,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 13,
                       height: 1.3,
                       color: scheme.onSurfaceVariant)),
             ],
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               [
                 if (work.averageRating != null)
@@ -406,7 +403,7 @@ class _MediumCard extends StatelessWidget with _OnlineCardBase {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                  fontSize: 12, height: 1.3, color: scheme.onSurfaceVariant),
+                  fontSize: 13, height: 1.3, color: scheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -431,13 +428,13 @@ class _CompactCard extends StatelessWidget with _OnlineCardBase {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: coverStack(context, work, aspectRatio: 1.0)),
+            coverStack(context, work, aspectRatio: 4 / 3),
             const SizedBox(height: UiSpacing.xSmall),
             Text(work.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w500)),
+                    fontSize: 12, fontWeight: FontWeight.w500)),
           ],
         ),
       ),
@@ -476,8 +473,8 @@ class _ListCard extends StatelessWidget with _OnlineCardBase {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          fontSize: 13.5, fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 2),
+                          fontSize: 15, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 3),
                   Text(
                     [
                       if (work.circleName != null) work.circleName!,
@@ -490,7 +487,7 @@ class _ListCard extends StatelessWidget with _OnlineCardBase {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 13,
                         height: 1.3,
                         color: scheme.onSurfaceVariant),
                   ),

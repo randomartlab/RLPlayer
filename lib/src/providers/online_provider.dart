@@ -86,7 +86,7 @@ class OnlineProvider extends ChangeNotifier {
     return work;
   }
 
-  /// 展开文件树中的全部音轨（扁平列表，用于播放队列/下载）。
+  /// 展开文件树中的全部音轨（扁平列表，用于播放队列）。
   List<OnlineFileNode> flattenAudioNodes(List<OnlineFileNode> nodes) {
     final result = <OnlineFileNode>[];
     for (final node in nodes) {
@@ -96,6 +96,31 @@ class OnlineProvider extends ChangeNotifier {
         result.add(node);
       }
     }
+    return result;
+  }
+
+  /// 展开可下载文件：音频 + 字幕/歌词（本地为主：下载入库后字幕可用）。
+  static const _downloadableExts = {
+    '.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus',
+    '.srt', '.vtt', '.lrc', '.txt',
+  };
+
+  List<OnlineFileNode> flattenDownloadable(List<OnlineFileNode> nodes) {
+    final result = <OnlineFileNode>[];
+    void walk(List<OnlineFileNode> list) {
+      for (final node in list) {
+        if (node.isFolder) {
+          walk(node.children);
+        } else if (node.title.contains('.') &&
+            _downloadableExts.contains(node.title
+                .substring(node.title.lastIndexOf('.'))
+                .toLowerCase())) {
+          result.add(node);
+        }
+      }
+    }
+
+    walk(nodes);
     return result;
   }
 

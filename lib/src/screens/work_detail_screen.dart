@@ -143,17 +143,25 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
         padding: const EdgeInsets.fromLTRB(
             UiSpacing.large, UiSpacing.small, UiSpacing.large, UiSpacing.xLarge),
         children: [
-          // ① 封面框：r12，Hero tag = work_cover_${id}。
+          // ① 封面框（沉浸式：宽至屏宽-32，4:3 实测封面比例零裁切）。
           Center(
             child: Hero(
               tag: 'work_cover_${work.id}',
-              child: SizedBox(
-                width: 220,
-                height: 220,
-                child: WorkCover(
-                  work: work,
-                  borderRadius: UiRadii.list,
-                ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final width =
+                      constraints.maxWidth.clamp(0, 480).toDouble();
+                  return SizedBox(
+                    width: width,
+                    child: AspectRatio(
+                      aspectRatio: 4 / 3,
+                      child: WorkCover(
+                        work: work,
+                        borderRadius: UiRadii.list,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),

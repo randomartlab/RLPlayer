@@ -31,6 +31,10 @@ class OnlineWorkDetailScreen extends StatefulWidget {
 class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
   OnlineWork? _detail;
   List<OnlineFileNode>? _tracks;
+
+  /// 字幕/歌词文件数（用户反馈：是否带字幕应明确标注）。
+  int _subtitleCount = 0;
+  int _lyricCount = 0;
   bool _loading = true;
   bool _tracksLoading = true;
   String? _error;
@@ -61,12 +65,36 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
     // 文件树独立接口（/api/tracks/{id}）。
     try {
       final tracks = await api.getTracks(widget.work.id);
-      if (mounted) setState(() => _tracks = tracks);
+      if (mounted) {
+        setState(() {
+          _tracks = tracks;
+          _subtitleCount = _countByExt(tracks, const {'.srt', '.vtt'});
+          _lyricCount = _countByExt(tracks, const {'.lrc', '.txt'});
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _tracks = const []);
     } finally {
       if (mounted) setState(() => _tracksLoading = false);
     }
+  }
+
+  int _countByExt(List<OnlineFileNode> nodes, Set<String> exts) {
+    var count = 0;
+    void walk(List<OnlineFileNode> list) {
+      for (final n in list) {
+        if (n.isFolder) {
+          walk(n.children);
+        } else if (n.title.contains('.') &&
+            exts.contains(
+                n.title.substring(n.title.lastIndexOf('.')).toLowerCase())) {
+          count++;
+        }
+      }
+    }
+
+    walk(nodes);
+    return count;
   }
 
   /// 流媒体播放：整作品队列（与本地播放共用内核，PRD §5.12）。
@@ -117,7 +145,7 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
 
     final nodes = _tracks == null
         ? <OnlineFileNode>[]
-        : online.flattenAudioNodes(_tracks!);
+        : online.flattenDownloadable(_tracks!);
     downloads.service.enqueueWork(detail, nodes,
         (node) => mirror.api.nodeDownloadUrl(node));
 
@@ -177,21 +205,26 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
                           ),
                         ),
                       ),
+                    // 沉浸式封面：宽至屏宽-32，4:3 实测比例零裁切。
                     Center(
-                      child: SizedBox(
-                        width: 220,
-                        height: 220,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(UiRadii.list),
-                          child: CachedNetworkImage(
-                            imageUrl: mirror.api.coverUrl(work.id),
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => Container(
-                                color: scheme.surfaceContainerHighest),
-                            errorWidget: (context, url, error) => Container(
-                              color: scheme.surfaceContainerHighest,
-                              child: Icon(Icons.album,
-                                  color: scheme.onSurfaceVariant, size: 48),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) => SizedBox(
+                          width: constraints.maxWidth.clamp(0, 480),
+                          child: AspectRatio(
+                            aspectRatio: 4 / 3,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(UiRadii.list),
+                              child: CachedNetworkImage(
+                                imageUrl: mirror.api.coverUrl(work.id),
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) => Container(
+                                    color: scheme.surfaceContainerHighest),
+                                errorWidget: (context, url, error) => Container(
+                                  color: scheme.surfaceContainerHighest,
+                                  child: Icon(Icons.album,
+                                      color: scheme.onSurfaceVariant, size: 48),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -233,6 +266,13 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
                           icon: Icons.calendar_today_outlined,
                           text:
                               '发行：${work.release!.year}-${work.release!.month.toString().padLeft(2, '0')}-${work.release!.day.toString().padLeft(2, '0')}'),
+                    if (_subtitleCount > 0)
+                      _InfoLine(
+                          icon: Icons.subtitles_outlined,
+                          text: '含字幕（$_subtitleCount 个字幕文件）'),
+                    if (_lyricCount > 0)
+                      _InfoLine(
+                          icon: Icons.lyrics_outlined, text: '含歌词'),
                     if (work.tags.isNotEmpty) ...[
                       const SizedBox(height: UiSpacing.medium),
                       Wrap(
@@ -446,20 +486,24 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
                 depth: widget.depth + 1,
                 flatAudioNodes: widget.flatAudioNodes,
               ),
-          ] else if (node.isAudio)
+          ] else
+            // 全部文件类型都显示（用户反馈：字幕文件必须可见以判断作品附带情况）。
             ListTile(
               dense: true,
               contentPadding: EdgeInsets.only(left: 16 + indent, right: 16),
-              leading: Icon(Icons.music_note_outlined,
-                  size: UiIconSize.large, color: scheme.onSurfaceVariant),
+              leading: _fileIcon(context, node),
               title: Text(
                 _stripExt(node.title),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              trailing: const Icon(Icons.play_circle_outline),
-              onTap: () =>
-                  widget.onTrackTap(widget.flatAudioNodes.indexOf(node)),
+              trailing: node.isAudio
+                  ? const Icon(Icons.play_circle_outline)
+                  : null,
+              onTap: node.isAudio
+                  ? () => widget.onTrackTap(
+                      widget.flatAudioNodes.indexOf(node))
+                  : null,
             ),
       ],
     );
@@ -468,5 +512,25 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
   String _stripExt(String name) {
     final dot = name.lastIndexOf('.');
     return dot > 0 ? name.substring(0, dot) : name;
+  }
+
+  Widget _fileIcon(BuildContext context, OnlineFileNode node) {
+    final scheme = Theme.of(context).colorScheme;
+    final ext = node.title.contains('.')
+        ? node.title.substring(node.title.lastIndexOf('.')).toLowerCase()
+        : '';
+    final (icon, color) = switch (ext) {
+      '.mp3' || '.m4a' || '.flac' || '.wav' || '.ogg' || '.opus' =>
+        (Icons.music_note_outlined, scheme.primary),
+      '.srt' || '.vtt' => (Icons.subtitles_outlined, scheme.tertiary),
+      '.lrc' || '.txt' => (Icons.lyrics_outlined, scheme.tertiary),
+      '.mp4' || '.mkv' || '.avi' || '.webm' =>
+        (Icons.movie_outlined, scheme.onSurfaceVariant),
+      '.jpg' || '.png' || '.gif' || '.webp' =>
+        (Icons.image_outlined, scheme.onSurfaceVariant),
+      '.pdf' => (Icons.picture_as_pdf_outlined, scheme.onSurfaceVariant),
+      _ => (Icons.insert_drive_file_outlined, scheme.onSurfaceVariant),
+    };
+    return Icon(icon, size: UiIconSize.large, color: color);
   }
 }

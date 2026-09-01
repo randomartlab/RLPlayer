@@ -11,6 +11,13 @@ import '../models/audio_track.dart';
 class AudioPlayerHandler extends BaseAudioHandler {
   final AudioPlayer _player = AudioPlayer();
 
+  /// 自维护的当前曲目索引。
+  ///
+  /// just_audio 对单文件源（非 ConcatenatingAudioSource）的
+  /// currentIndex 始终返回 0——依赖它会导致「点任何音轨都播第一首」
+  /// （实机反馈根因 2026-09-02）。
+  int _currentIndex = 0;
+
   /// 当前队列（M1 为内存态；M2 起由本地库/在线模块提供）。
   final List<AudioTrack> _queue = [];
 
@@ -50,16 +57,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
     switch (_loopMode) {
       case LoopMode.one:
         // 单曲循环：just_audio LoopMode.one 已自动重播；此处兜底。
-        _loadIndex(_player.currentIndex ?? 0, autoPlay: true);
+        _loadIndex(_currentIndex, autoPlay: true);
       case LoopMode.all:
-        final next = (_player.currentIndex ?? 0) + 1;
+        final next = _currentIndex + 1;
         if (next < _queue.length) {
           _loadIndex(next, autoPlay: true);
         } else {
           _loadIndex(0, autoPlay: true); // 列表循环回开头。
         }
       case LoopMode.off:
-        final next = (_player.currentIndex ?? 0) + 1;
+        final next = _currentIndex + 1;
         if (next < _queue.length) {
           _loadIndex(next, autoPlay: true);
         }
@@ -84,7 +91,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   /// 队列删除（左滑删除）。
   Future<void> removeAt(int index) async {
     if (index < 0 || index >= _queue.length) return;
-    final isCurrent = index == (_player.currentIndex ?? -1);
+    final isCurrent = index == _currentIndex;
     _queue.removeAt(index);
     if (_queue.isEmpty) {
       await stop();
@@ -120,7 +127,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
       speed: _player.speed,
-      queueIndex: event.currentIndex,
+      queueIndex: _currentIndex,
     );
   }
 
@@ -148,6 +155,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   Future<void> _loadIndex(int index, {required bool autoPlay}) async {
     if (index < 0 || index >= _queue.length) return;
+    _currentIndex = index;
     final track = _queue[index];
 
     final source = _sourceFor(track);
@@ -170,8 +178,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   AudioTrack? get currentTrack {
-    final index = _player.currentIndex ?? 0;
-    return _queue.isNotEmpty && index < _queue.length ? _queue[index] : null;
+    return _queue.isNotEmpty && _currentIndex < _queue.length
+        ? _queue[_currentIndex]
+        : null;
   }
 
   @override
@@ -187,12 +196,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
   Future<void> stop() async {
     await _player.stop();
     _queue.clear();
+    _currentIndex = 0;
     _notifyPlaybackState();
   }
 
   @override
   Future<void> skipToNext() async {
-    final index = (_player.currentIndex ?? 0) + 1;
+    final index = _currentIndex + 1;
     if (index >= _queue.length) return;
     await _loadIndex(index, autoPlay: _player.playing);
   }
@@ -204,7 +214,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       await _player.seek(Duration.zero);
       return;
     }
-    final index = (_player.currentIndex ?? 0) - 1;
+    final index = _currentIndex - 1;
     if (index < 0) {
       await _player.seek(Duration.zero);
       return;

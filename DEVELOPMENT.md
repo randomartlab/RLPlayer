@@ -281,3 +281,10 @@ flutter test                  # 中文路径下正常
 ⏳ 欠账（一期外，后续版本）：音频增益（just_audio volume≤1，需平台侧）、
 字幕独立渲染开关、暗色专项复查、封面解码性能专项、DLsite 兜底解析、
 FTS 搜索、播放列表管理、字幕库、像素级视觉比对
+
+## 追加功能（2026-09-01 深夜二期，bd70c16）
+
+- **标签点击过滤**：works.tags（DB v5，metadata.json 入库）+ TagFilterScreen
+  双模式（本地过滤 / asmr.one 标签搜索）；详情页标签 ActionChip
+- **DLsite 三层元数据**：asmr.one → DLsite 产品 AJAX API（实测可用，标题/社团/
+  声優/标签/评分结构化 JSON）→ noResult 静默兜底；DLsite 命中也回填显示字段

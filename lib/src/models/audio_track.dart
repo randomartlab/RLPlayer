@@ -16,9 +16,11 @@ class AudioTrack {
   /// 关联歌词（lrc 解析结果）；M1 由资产/手动加载，M2 由本地识别引擎自动关联。
   final String? lyricPath;
 
-  /// 在线字幕 URL（vtt/srt，在线播放自动匹配；本地字幕走 lyricPath 同名关联之外的
-  /// subtitlePath 链路由 M8 扫描提供）。
+  /// 在线字幕 URL（vtt/srt，在线播放自动匹配）。
   final String? subtitleUrl;
+
+  /// 本地字幕文件路径（vtt/srt，在线播放按 RJ 号从本地库回填；本地优先）。
+  final String? subtitlePath;
 
   const AudioTrack({
     required this.id,
@@ -29,5 +31,6 @@ class AudioTrack {
     this.artworkUrl,
     this.lyricPath,
     this.subtitleUrl,
+    this.subtitlePath,
   });
 }

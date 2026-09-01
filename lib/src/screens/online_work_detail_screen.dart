@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../models/audio_track.dart';
 import '../models/online_models.dart';
+import '../models/work.dart';
 import '../providers/audio_provider.dart';
 import '../providers/download_provider.dart';
 import '../providers/library_provider.dart';
@@ -110,16 +111,25 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
     final subtitleNodes = _flattenByExts(
         _tracks!, const {'.vtt', '.srt', '.lrc', '.txt'});
 
+    // 本地库按 RJ 号回填（用户约定：在线播放优先用本地已有的歌词/字幕）。
+    final localNodes = await _localNodesForRj(detail.rjCode);
+
     final tracks = <AudioTrack>[];
     for (final node in audioNodes) {
       try {
         final subtitle = _matchSubtitle(node, subtitleNodes);
+        // 本地同名音轨（基础名模糊匹配）→ 继承本地歌词/字幕。
+        final localMatch = _localMatch(localNodes, node);
+        final localLyricPath = localMatch?.lyricPath;
+        final localSubtitlePath = localMatch?.subtitlePath;
         tracks.add(AudioTrack(
           id: 'online_${detail.id}_${node.title}',
           title: _stripExtension(node.title),
           artist: detail.title,
           source: mirror.api.nodeStreamUrl(node),
           artworkUrl: mirror.api.coverUrl(detail.id),
+          lyricPath: localLyricPath,
+          subtitlePath: localSubtitlePath,
           subtitleUrl: subtitle != null
               ? mirror.api.nodeStreamUrl(subtitle)
               : null,
@@ -163,19 +173,67 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
   OnlineFileNode? _matchSubtitle(
       OnlineFileNode audio, List<OnlineFileNode> subtitles) {
     final audioBase = _stripAudioExt(audio.title.toLowerCase());
+    if (audioBase.isEmpty) return null;
+
+    // 第一层：精确匹配（歌名.mp3.vtt / 歌名.vtt / 歌名.mp3.lrc 等
+    // 全部组合经双层剥离后与音频基础名比对）。
     for (final subtitle in subtitles) {
-      var name = subtitle.title.toLowerCase();
-      for (final ext in const ['.vtt', '.srt', '.lrc', '.txt']) {
-        if (name.endsWith(ext)) {
-          name = name.substring(0, name.length - ext.length);
-          break;
-        }
-      }
-      final subBase = _stripAudioExt(name);
-      if (audioBase.isNotEmpty && audioBase == subBase) return subtitle;
+      final subBase = _stripSubtitleExt(subtitle.title.toLowerCase());
+      if (audioBase == subBase) return subtitle;
+    }
+    // 第二层：normalize 模糊匹配（空格/下划线/连字符/括号差异）。
+    final audioNorm = _normalize(audioBase);
+    if (audioNorm.isEmpty) return null;
+    for (final subtitle in subtitles) {
+      final subNorm =
+          _normalize(_stripSubtitleExt(subtitle.title.toLowerCase()));
+      if (audioNorm == subNorm) return subtitle;
     }
     return null;
   }
+
+  /// 字幕名双层剥离：先去字幕扩展（.vtt/.srt/.lrc/.txt），再去音频扩展
+  /// （.mp3/.wav/.flac/.m4a 等），得到内容基础名。
+  String _stripSubtitleExt(String name) {
+    for (final ext in const ['.vtt', '.srt', '.lrc', '.txt']) {
+      if (name.endsWith(ext)) {
+        name = name.substring(0, name.length - ext.length);
+        break;
+      }
+    }
+    return _stripAudioExt(name);
+  }
+
+  /// 本地库同 RJ 作品的文件节点（无则空列表）。
+  Future<List<FileNode>> _localNodesForRj(String rjCode) async {
+    try {
+      final library = context.read<LibraryProvider>();
+      final work = library.works
+          .where((w) => w.rjCode == rjCode)
+          .firstOrNull;
+      if (work == null) return const [];
+      return await library.nodesOf(work);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// 在线音轨 → 本地同名节点（基础名双层剥离 + normalize 模糊匹配）。
+  FileNode? _localMatch(List<FileNode> localNodes, OnlineFileNode online) {
+    final onlineBase =
+        _normalize(_stripAudioExt(_stripAudioExt(online.title.toLowerCase())));
+    for (final node in localNodes) {
+      if (node.isDirectory) continue;
+      final localBase = _normalize(
+          _stripAudioExt(node.displayName.toLowerCase()));
+      if (onlineBase.isNotEmpty && onlineBase == localBase) return node;
+    }
+    return null;
+  }
+
+  /// 归一化模糊匹配（KikoFlu normalizeForMatching：去空格/标点差异）。
+  String _normalize(String name) =>
+      name.replaceAll(RegExp(r'[\s_\-\.\[\]\(\)（）\s]+'), '');
 
   String _stripAudioExt(String name) {
     for (final ext in const [

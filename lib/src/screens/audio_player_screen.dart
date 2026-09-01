@@ -74,8 +74,20 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
     final track = context.read<AudioPlayerProvider>().currentTrack;
     final lyricPath = track?.lyricPath;
 
-    // 本地无 lrc 时回退在线字幕（vtt/srt，在线播放自动匹配）。
+    // 字幕/歌词三级降级：本地 lrc → 本地 vtt/srt → 在线字幕 URL。
     if (lyricPath == null) {
+      final subtitlePath = track?.subtitlePath;
+      if (subtitlePath != null) {
+        try {
+          final text = await File(subtitlePath).readAsString();
+          if (mounted) {
+            setState(() => _lyricController.lyrics = parseVttOrSrt(text));
+          }
+        } catch (_) {
+          _lyricController.lyrics = null;
+        }
+        return;
+      }
       final subtitleUrl = track?.subtitleUrl;
       if (subtitleUrl != null) {
         try {

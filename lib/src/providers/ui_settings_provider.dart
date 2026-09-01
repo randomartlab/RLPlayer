@@ -15,12 +15,22 @@ class UiSettingsProvider extends ChangeNotifier {
   static const String _navStyleKey = 'nav_style';
   static const String _glassIntensityKey = 'glass_intensity';
   static const String _glassBlurModeKey = 'glass_blur_mode';
+  static const String _uiFontScaleKey = 'ui_font_scale';
+  static const String _lyricFontScaleKey = 'lyric_font_scale';
 
   NavStyle _navStyle = NavStyle.classic;
   double _glassIntensity = 0.4; // 原版默认 intensity
   GlassBlurMode _glassBlurMode = GlassBlurMode.clear;
 
+  /// 全局界面字体缩放（0.8–1.4，叠加在系统缩放之上）。
+  double _uiFontScale = 1.0;
+
+  /// 歌词视图独立字体缩放（0.8–2.0，不影响其他界面）。
+  double _lyricFontScale = 1.0;
+
   NavStyle get navStyle => _navStyle;
+  double get uiFontScale => _uiFontScale;
+  double get lyricFontScale => _lyricFontScale;
   double get glassIntensity => _glassIntensity;
   GlassBlurMode get glassBlurMode => _glassBlurMode;
 
@@ -37,6 +47,8 @@ class UiSettingsProvider extends ChangeNotifier {
     _glassIntensity = prefs.getDouble(_glassIntensityKey) ?? 0.4;
     _glassBlurMode = GlassBlurMode.values[
         prefs.getInt(_glassBlurModeKey) ?? GlassBlurMode.clear.index];
+    _uiFontScale = prefs.getDouble(_uiFontScaleKey) ?? 1.0;
+    _lyricFontScale = prefs.getDouble(_lyricFontScaleKey) ?? 1.0;
     notifyListeners();
   }
 
@@ -52,6 +64,20 @@ class UiSettingsProvider extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_glassIntensityKey, _glassIntensity);
+  }
+
+  Future<void> setUiFontScale(double value) async {
+    _uiFontScale = value.clamp(0.8, 1.4);
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_uiFontScaleKey, _uiFontScale);
+  }
+
+  Future<void> setLyricFontScale(double value) async {
+    _lyricFontScale = value.clamp(0.8, 2.0);
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_lyricFontScaleKey, _lyricFontScale);
   }
 
   Future<void> setGlassBlurMode(GlassBlurMode mode) async {

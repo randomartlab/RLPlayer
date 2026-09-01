@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart' show LoopMode, PlayerState;
 
+import '../services/floating_lyric_service.dart';
+import '../widgets/player/lyric_view.dart';
+
 import '../models/audio_track.dart';
 import '../services/audio_player_service.dart';
 
@@ -15,6 +18,13 @@ class AudioPlayerProvider extends ChangeNotifier {
   AudioPlayerProvider(this.handler) {
     _currentTrack = handler.currentTrack;
     _isPlaying = handler.player.playing;
+
+    // 悬浮桌面歌词（M5）：全局歌词状态 + 位置订阅（播放器关闭后仍联动）。
+    _lyricSubscriptions.addAll([
+      positionStream.listen(lyricController.locateTo),
+      seekEvents.listen(lyricController.locateTo),
+    ]);
+    lyricController.addListener(_onLyricLineChanged);
 
     _subscriptions.addAll([
       handler.player.playerStateStream.listen((state) {
@@ -30,6 +40,19 @@ class AudioPlayerProvider extends ChangeNotifier {
   }
 
   final List<StreamSubscription<dynamic>> _subscriptions = [];
+  final List<StreamSubscription<Duration>> _lyricSubscriptions = [];
+
+  /// 全局歌词控制器（悬浮歌词/播放器共用；播放器页面只负责填充歌词数据）。
+  final LyricController lyricController = LyricController();
+
+  /// 悬浮桌面歌词服务。
+  final FloatingLyricService floatingLyric = FloatingLyricService();
+
+  void _onLyricLineChanged() {
+    unawaited(floatingLyric.pushLyric(
+      _isPlaying ? lyricController.activeText : null,
+    ));
+  }
 
   AudioTrack? _currentTrack;
   bool _isPlaying = false;
@@ -179,7 +202,11 @@ class AudioPlayerProvider extends ChangeNotifier {
   @override
   void dispose() {
     _sleepTimer?.cancel();
+    lyricController.removeListener(_onLyricLineChanged);
     for (final subscription in _subscriptions) {
+      subscription.cancel();
+    }
+    for (final subscription in _lyricSubscriptions) {
       subscription.cancel();
     }
     _seekEvents.close();

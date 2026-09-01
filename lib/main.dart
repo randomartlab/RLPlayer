@@ -14,6 +14,7 @@ import 'src/providers/theme_provider.dart';
 import 'src/providers/ui_settings_provider.dart';
 import 'src/screens/main_screen.dart';
 import 'src/services/audio_player_service.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'src/services/download_service.dart';
 import 'src/services/history_service.dart';
 import 'src/services/net_meta_service.dart';
@@ -124,6 +125,21 @@ class KikoLocalApp extends StatelessWidget {
                 return MaterialApp(
                   title: 'KikoLocal',
                   debugShowCheckedModeBanner: false,
+                  // 全局字体缩放（用户设置，叠加系统缩放；上限 2.0 与 PRD §4.7 一致）。
+                  builder: (context, child) {
+                    final scale =
+                        context.watch<UiSettingsProvider>().uiFontScale;
+                    final mediaQuery = MediaQuery.of(context);
+                    final scaled = (mediaQuery.textScaler.scale(14) / 14) *
+                        scale; // 系统缩放 × 用户缩放
+                    return MediaQuery(
+                      data: mediaQuery.copyWith(
+                        textScaler:
+                            TextScaler.linear(scaled.clamp(0.5, 2.0)),
+                      ),
+                      child: child!,
+                    );
+                  },
                   theme: AppTheme.lightTheme(
                     useDynamic ? lightDynamic : null,
                     settings.colorSchemeType,
@@ -198,4 +214,65 @@ class _HistoryRecorderState extends State<_HistoryRecorder> {
 
   @override
   Widget build(BuildContext context) => widget.child;
+}
+
+
+/// 悬浮桌面歌词独立入口（flutter_overlay_window 要求，overlay isolate 运行）。
+@pragma('vm:entry-point')
+void overlayMain() {
+  runApp(const _OverlayLyricApp());
+}
+
+class _OverlayLyricApp extends StatelessWidget {
+  const _OverlayLyricApp();
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(useMaterial3: true, colorSchemeSeed: const Color(0xFF146683)),
+      home: const _OverlayLyricPage(),
+    );
+  }
+}
+
+class _OverlayLyricPage extends StatelessWidget {
+  const _OverlayLyricPage();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return StreamBuilder<dynamic>(
+      initialData: '',
+      stream: FlutterOverlayWindow.overlayListener,
+      builder: (context, snapshot) {
+        final text = (snapshot.data ?? '').toString();
+        return Material(
+          color: Colors.transparent,
+          child: Center(
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: scheme.surface.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                text.isEmpty ? '♪' : text,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  height: 1.4,
+                  color: scheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }

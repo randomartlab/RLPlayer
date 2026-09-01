@@ -109,6 +109,38 @@ class SettingsScreen extends StatelessWidget {
                     themeSettings.settings.colorSchemeType)),
                 onTap: () => _showSchemePicker(context),
               ),
+              ListTile(
+                leading: _LeadingIcon(
+                    icon: Icons.format_size_outlined, context: context),
+                title: const Text('界面字体大小'),
+                subtitle: Slider(
+                  value: uiSettings.uiFontScale,
+                  min: 0.8,
+                  max: 1.4,
+                  divisions: 12,
+                  label:
+                      '${(uiSettings.uiFontScale * 100).toInt()}%',
+                  onChanged: uiSettings.setUiFontScale,
+                ),
+                trailing: Text(
+                    '${(uiSettings.uiFontScale * 100).toInt()}%'),
+              ),
+              ListTile(
+                leading: _LeadingIcon(
+                    icon: Icons.lyrics_outlined, context: context),
+                title: const Text('歌词字体大小'),
+                subtitle: Slider(
+                  value: uiSettings.lyricFontScale,
+                  min: 0.8,
+                  max: 2.0,
+                  divisions: 12,
+                  label:
+                      '${(uiSettings.lyricFontScale * 100).toInt()}%',
+                  onChanged: uiSettings.setLyricFontScale,
+                ),
+                trailing: Text(
+                    '${(uiSettings.lyricFontScale * 100).toInt()}%'),
+              ),
             ],
           ),
           const SizedBox(height: UiSpacing.medium),

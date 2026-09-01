@@ -47,6 +47,7 @@ dependencies:
   # 本地 fork：补 setAndroidAudioAttributes 空实现（media_kit 后端 + audio_service 组合修复）
   just_audio_media_kit:
     path: third_party/just_audio_media_kit
+  flutter_overlay_window: ^0.5.0
   # just_audio_media_kit_orig: ^2.1.0
 
 dev_dependencies:

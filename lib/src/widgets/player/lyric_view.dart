@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../providers/ui_settings_provider.dart';
 
 import '../../models/lyric.dart';
 import '../../utils/ui_tokens.dart';
@@ -204,6 +207,9 @@ class _LyricViewState extends State<LyricView> {
     final scheme = Theme.of(context).colorScheme;
     final line = lyrics.lines[index];
     final isActive = index == controller.activeIndex;
+    // 歌词独立字体缩放（用户设置，不影响其他界面）。
+    final fontScale =
+        context.watch<UiSettingsProvider>().lyricFontScale;
 
       return GestureDetector(
           // 点击歌词行 → 立即 seek 到该行（用户反馈：点击歌词跳转进度）。
@@ -234,7 +240,7 @@ class _LyricViewState extends State<LyricView> {
               softWrap: true,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: isActive ? 18 : 16,
+                fontSize: (isActive ? 18 : 16) * fontScale,
                 fontWeight: isActive ? FontWeight.bold : FontWeight.w400,
                 color: isActive ? scheme.primary : scheme.onSurfaceVariant,
                 height: 1.5,

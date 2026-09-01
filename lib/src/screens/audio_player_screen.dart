@@ -30,7 +30,10 @@ class AudioPlayerScreen extends StatefulWidget {
 }
 
 class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
-  final LyricController _lyricController = LyricController();
+  // 全局歌词控制器（provider 持有，悬浮歌词共用）。
+  LyricController get _lyricController => audioProvider.lyricController;
+  AudioPlayerProvider get audioProvider =>
+      context.read<AudioPlayerProvider>();
   final LyricPreviewThrottle _previewThrottle = LyricPreviewThrottle();
   final List<StreamSubscription<Duration?>> _durationSubs = [];
   StreamSubscription<Duration>? _positionSub;
@@ -66,7 +69,6 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
     for (final sub in _durationSubs) {
       sub.cancel();
     }
-    _lyricController.dispose();
     super.dispose();
   }
 
@@ -490,10 +492,10 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             IconButton(
-              icon: const Icon(Icons.subtitles_outlined),
+              icon: const Icon(Icons.lyrics_outlined),
               iconSize: UiIconSize.standard,
-              tooltip: '悬浮字幕',
-              onPressed: null, // 下一批：悬浮字幕（M5 二期）
+              tooltip: '悬浮桌面歌词',
+              onPressed: () => _toggleFloatingLyric(context, audio),
             ),
             IconButton(
               icon: Icon(
@@ -528,6 +530,33 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
         LoopMode.one => '单曲循环',
         LoopMode.off => '循环关闭',
       };
+
+  /// 悬浮桌面歌词开关（PRD §5.6.7：默认关，首次开启引导授权）。
+  Future<void> _toggleFloatingLyric(
+      BuildContext context, AudioPlayerProvider audio) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (audio.floatingLyric.showing) {
+      await audio.floatingLyric.hide();
+      messenger.showSnackBar(const SnackBar(
+          content: Text('悬浮歌词已关闭'),
+          duration: Duration(seconds: 2)));
+      return;
+    }
+    final ok = await audio.floatingLyric.show();
+    if (!mounted) return;
+    if (ok) {
+      // 立即推送当前行。
+      unawaited(audio.floatingLyric
+          .pushLyric(audio.lyricController.activeText));
+      messenger.showSnackBar(const SnackBar(
+          content: Text('悬浮歌词已开启（可拖动，点击穿透）'),
+          duration: Duration(seconds: 2)));
+    } else {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('需要「显示在其他应用上层」权限，请在系统设置中授予后重试'),
+          duration: Duration(seconds: 4)));
+    }
+  }
 
   /// 快退 / 快进固定 10 秒（PRD §5.6.3）；走 seek 统一入口联动歌词。
   void _skipBy(AudioPlayerProvider audio, Duration delta) {

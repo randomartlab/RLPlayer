@@ -2,7 +2,6 @@ import 'package:audio_service/audio_service.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
-import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:provider/provider.dart';
 
 import 'src/providers/audio_provider.dart';
@@ -24,9 +23,10 @@ import 'src/utils/theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 播放后端：media_kit（libmpv）。ExoPlayer 在部分模拟器（如 MuMu ARM64）上
-  // 音频渲染卡死（position 不推进）；libmpv 兼容性更好，全平台统一（KikoFlu 同款组合）。
-  JustAudioMediaKit.ensureInitialized(android: true);
+  // 播放后端：ExoPlayer（Android 默认）。
+  // 实测 MuMu ARM64：音频实际在播（AudioTrack 已建），但平台位置事件不回调
+  // → positionStream 冻结；已用 createPositionStream 本地外推修复（见 AudioPlayerProvider）。
+  // media_kit 后端在该环境卡 idle，仅留 fork 备用（不启用）。
 
   // 播放内核：audio_service 后台服务 + just_audio（KikoFlu 播放组合沿用）。
   // 初始化失败时降级为无后台通知栏模式，保证 App 正常启动（防启动卡 splash）。

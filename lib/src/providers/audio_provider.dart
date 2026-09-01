@@ -46,8 +46,17 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   bool get miniPlayerVisible => _miniPlayerVisible;
 
-  /// 进度流（Mini Player / 播放器直接订阅，避免每 tick 重建整棵树）。
-  Stream<Duration> get positionStream => handler.player.positionStream;
+  /// 进度流：createPositionStream 本地时钟外推。
+  ///
+  /// 默认 positionStream 依赖平台位置事件——MuMu 等模拟器上事件不回调导致
+  /// 进度/歌词冻结（音频实际在播）。此流按 playWhenReady+speed 本地推算，
+  /// 平台事件缺失时依然平滑推进。
+  Stream<Duration> get positionStream =>
+      handler.player.createPositionStream(
+        steps: 1000,
+        minPeriod: const Duration(milliseconds: 50),
+        maxPeriod: const Duration(milliseconds: 200),
+      );
 
   Stream<Duration?> get durationStream => handler.player.durationStream;
 

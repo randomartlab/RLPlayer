@@ -119,3 +119,16 @@ flutter test                  # 中文路径下正常
       文件树点音轨播放 → 歌词联动
 - [ ] 用真实 RJ 文件夹结构抽样验证识别率（验收 #11：≥95%）
 - [ ] 视觉比对验收 #3/#4/#8（封面墙列数间距、详情页区块、我的页）
+
+## MuMu 模拟器实测环境（2026-09-01 确认）
+
+- **MuMu Mac（Apple Silicon）= ARM64 Android 12（API 32）**，不是 x86_64！
+  打包用 `app-arm64-v8a-debug.apk`；x86_64 包装不上（INSTALL_FAILED_NO_MATCHING_ABIS）。
+- 官方 CLI：`/Applications/MuMuPlayer.app/Contents/MacOS/mumu-cli`
+  - `control <idx> --action install_apk --path <apk>` 安装
+  - `control <idx> --action run_cmd --cmd "<shell>"` 执行 shell（返回含 adb_port）
+  - `open/close/info <idx>` 管理实例
+- adb 端口：实例 1 = 16416（实例运行时才开放），`adb connect 127.0.0.1:16416`
+- 样例测试库已推至 `/storage/emulated/0/Music/KikoLocal测试/kiko_testdata/`：
+  含嵌套 RJ（合集分类/RJ123456）、同名 lrc 关联、唯一单音轨歌词关联（第二优先级）、
+  同名封面（优先级 2）、cover.png（优先级 1）、metadata.json 标题/社团映射

@@ -17,15 +17,22 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // 播放内核：audio_service 后台服务 + just_audio（KikoFlu 播放组合沿用）。
-  final handler = await AudioService.init(
-    builder: AudioPlayerHandler.new,
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'dev.kikolocal.channel.audio',
-      androidNotificationChannelName: 'KikoLocal 播放',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-    ),
-  );
+  // 初始化失败时降级为无后台通知栏模式，保证 App 正常启动（防启动卡 splash）。
+  AudioPlayerHandler handler;
+  try {
+    handler = await AudioService.init(
+      builder: AudioPlayerHandler.new,
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'dev.kikolocal.channel.audio',
+        androidNotificationChannelName: 'KikoLocal 播放',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+      ),
+    );
+  } catch (e) {
+    debugPrint('AudioService.init 失败，降级为无后台服务模式：$e');
+    handler = AudioPlayerHandler();
+  }
 
   runApp(KikoLocalApp(handler: handler));
 }

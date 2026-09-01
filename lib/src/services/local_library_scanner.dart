@@ -355,7 +355,9 @@ class LocalLibraryScanner {
         isDirectory: true,
         name: p.basename(dir),
         relativePath: p.relative(dir, from: workDir.path),
-        parentPath: p.relative(p.dirname(dir), from: workDir.path),
+        // p.relative(工作目录自身) 返回 '.'，归一为 ''（根）。
+        parentPath:
+            _normalizeRelative(p.dirname(dir), workDir.path),
       ));
     }
     for (final audio in audioFiles) {
@@ -363,7 +365,8 @@ class LocalLibraryScanner {
         isDirectory: false,
         name: p.basename(audio.path),
         relativePath: p.relative(audio.path, from: workDir.path),
-        parentPath: p.relative(audio.parent.path, from: workDir.path),
+        parentPath:
+            _normalizeRelative(audio.parent.path, workDir.path),
         filePath: audio.path,
         durationSeconds: durations[audio],
         lyricPath: lyricMap[audio]?.path,
@@ -373,6 +376,13 @@ class LocalLibraryScanner {
 
     nodes.sort(compareNode);
     return nodes;
+  }
+
+  /// 相对路径归一：工作目录自身（'.'）返回 ''（根）。
+  /// POSIX p.relative(x, from: x) 返回 '.'，历史数据中 parent_path 存过 '.'。
+  static String _normalizeRelative(String path, String from) {
+    final result = p.relative(path, from: from);
+    return result == '.' ? '' : result;
   }
 
   /// 目录在前、同级自然排序。

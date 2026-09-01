@@ -8,7 +8,7 @@ import '../utils/ui_tokens.dart';
 /// - 每级缩进 20dp，文件名 14sp，层级图标 20dp；
 /// - 音轨行：名称（两行自适应换行，§4.7）+ 时长 + 已关联歌词/字幕小图标；
 /// - 点击音轨 → 播放并进入全屏播放器；
-/// - 默认展开第一层目录。
+/// - 目录默认收起，点按展开。
 class FileTreeView extends StatefulWidget {
   const FileTreeView({
     super.key,
@@ -32,12 +32,7 @@ class _FileTreeViewState extends State<FileTreeView> {
   @override
   void initState() {
     super.initState();
-    // 默认展开根层目录。
-    for (final node in widget.nodes) {
-      if (node.isDirectory && !node.relativePath.contains('/')) {
-        _expandedDirs.add(node.relativePath);
-      }
-    }
+    // 目录默认收起（用户约定：文件树直接可见，目录点按展开）。
   }
 
   /// 渲染 parentPath 下的直属节点（目录需展开才渲染子级）。
@@ -57,7 +52,8 @@ class _FileTreeViewState extends State<FileTreeView> {
   }
 
   bool _isChainExpanded(String parentPath) {
-    if (parentPath.isEmpty) return true;
+    // 历史数据兼容：parent_path '.'（M2-M5 期间扫描）等价于根。
+    if (parentPath.isEmpty || parentPath == '.') return true;
     final segments = parentPath.split('/');
     var prefix = '';
     for (final segment in segments) {
@@ -68,7 +64,9 @@ class _FileTreeViewState extends State<FileTreeView> {
   }
 
   int _depthOf(FileNode node) =>
-      node.parentPath.isEmpty ? 0 : node.parentPath.split('/').length;
+      (node.parentPath.isEmpty || node.parentPath == '.')
+          ? 0
+          : node.parentPath.split('/').length;
 
   @override
   Widget build(BuildContext context) {

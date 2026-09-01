@@ -38,9 +38,15 @@ class NetMetaService {
     if (!forceRefresh) {
       final cached = await database.queryNetMeta(rjCode);
       if (cached != null) {
-        // 缓存命中也执行封面兜底（历史缓存条目在封面兜底上线前写入，需补齐；
-        // PRD §5.11 封面降级链与元数据缓存相互独立）。
+        // 缓存命中也执行显示字段回填 + 封面兜底（历史缓存条目在相应功能
+        // 上线前写入，需补齐；PRD §5.11 封面降级链与元数据缓存相互独立）。
         if (!cached.noResult) {
+          await _backfillDisplayFields(
+            database,
+            rjCode,
+            vas: cached.netVas,
+            title: cached.netTitle,
+          );
           await _fetchNetworkCover(database, rjCode, cached.workId ?? numeric);
         }
         // noResult 标记抑制自动重试（手动刷新除外）。
@@ -86,7 +92,8 @@ class NetMetaService {
       });
       await database.upsertNetMeta(meta);
       debugPrint('[NetMeta] asmr.one 命中: $rjCode');
-      await _backfillDisplayFields(database, rjCode, detail);
+      await _backfillDisplayFields(database, rjCode,
+          vas: detail.vas, title: detail.title);
       // 封面降级链第 3 级：本地无封面 → 网络封面下载落盘（断网后仍可用）。
       await _fetchNetworkCover(database, rjCode, numeric);
       return meta;
@@ -111,15 +118,19 @@ class NetMetaService {
   /// 显示字段回填（用户决策 2026-09-01）：CV 空时由网络补全；
   /// 标题仅当本地标题为纯 RJ 号（无信息量）时用网络标题。
   Future<void> _backfillDisplayFields(
-      LocalLibraryDatabase database, String rjCode, dynamic detail) async {
+    LocalLibraryDatabase database,
+    String rjCode, {
+    List<String> vas = const [],
+    String? title,
+  }) async {
     try {
       final workId = await database.queryWorkIdByRj(rjCode);
       if (workId == null) return;
       final work = await database.queryWork(workId);
       if (work == null) return;
 
-      final netVas = detail.vas;
-      final netTitle = detail.title;
+      final netVas = vas;
+      final netTitle = title ?? '';
       // 本地标题为纯 RJ 号时才允许网络标题覆盖（本地优先）。
       final titleIsRjOnly = work.title.trim().toLowerCase() == rjCode.toLowerCase();
       await database.updateWorkDisplayFields(

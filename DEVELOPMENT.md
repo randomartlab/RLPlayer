@@ -132,3 +132,33 @@ flutter test                  # 中文路径下正常
 - 样例测试库已推至 `/storage/emulated/0/Music/KikoLocal测试/kiko_testdata/`：
   含嵌套 RJ（合集分类/RJ123456）、同名 lrc 关联、唯一单音轨歌词关联（第二优先级）、
   同名封面（优先级 2）、cover.png（优先级 1）、metadata.json 标题/社团映射
+
+## MuMu 实测问题排查记录（2026-09-01 下午）
+
+### 1. 扫描不到作品的根因（已解决）
+- **MuMu 的 `systemFilePermissionType` 设置（vm.json）默认 = 1**：该模式下 App
+  对 `/storage/emulated/0` 完全不可见（列目录返回空，READ_EXTERNAL_STORAGE
+  授权也无效，MANAGE appop 也无效——MuMu 的 FUSE 不走标准分区存储仲裁）。
+- 解决：`mumu-cli config 1 --setting '{"systemFilePermissionType":0}'` + 重启
+  虚拟机 → 标准存储恢复可访问。
+- **备用通道（任何模式下都可用）**：MuMu 共享文件夹
+  - Mac 侧：`~/Library/Application Support/com.netease.mumu.nemux/MuMuPlayerShared.localized/`
+  - Android 侧：`/mnt/shared/MuMu12Shared`（9p 挂载，不经 FUSE，App uid 直接可读写）
+  - 目录选择器已实现自动探测：共享挂载可用时默认定位到共享文件夹，
+    并提供「共享文件夹 / 内部存储」快捷切换 chips。
+
+### 2. 已知怪癖：系统内 screencap 截 Flutter 窗口为黑
+- `adb screencap` / `flutter screenshot --type=device` 抓到的 App 窗口几乎全黑
+  （仅文字可见），但用户在 MuMu 窗口看到的 UI 正常（用户可正常操作导航）。
+- 疑似 Flutter Impeller Vulkan surface 与 MuMu 截屏路径的兼容问题，仅影响
+  截屏不影响使用。Flutter 3.44 已移除 manifest 关闭 Impeller 的开关
+  （`EnableImpeller=false` 元数据无效，已验证并移除）。
+- 诊断 Flutter UI 状态的可靠方法：Dart VM 服务
+  `ext.flutter.debugDumpApp`（Widget 树完整可读）。
+
+### 3. 端到端验证结果（pm clear 后纯净流程）
+- 扫描根目录 = /mnt/shared/MuMu12Shared/KikoLocal测试 → 3 个作品：
+  RJ123456（2 轨 + cover.png 封面 + 同名 lrc 关联）、
+  RJ789012（1 轨 + 同名封面 + 唯一单音轨歌词第二优先级关联）、
+  RJ334455（metadata.json 标题/社团映射 + 占位封面）
+- 封面墙渲染 3 张卡片正常；sqlite 库数据正确。

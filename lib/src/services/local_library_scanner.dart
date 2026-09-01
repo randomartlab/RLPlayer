@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/work.dart';
@@ -34,10 +35,19 @@ class LocalLibraryScanner {
     final works = <ScannedWork>[];
     for (final rootPath in rootPaths) {
       final root = Directory(rootPath);
-      if (!await root.exists()) continue;
-      await _scanDirectory(root, works);
+      final exists = await root.exists();
+      debugPrint('[KikoScan] root=$rootPath exists=$exists');
+      if (!exists) continue;
+      try {
+        await _scanDirectory(root, works);
+      } catch (e, stack) {
+        // 单个根目录失败不影响其他根目录（权限/IO 异常不静默丢失）。
+        debugPrint('[KikoScan] 根目录扫描失败 root=$rootPath: $e');
+        debugPrintStack(stackTrace: stack, maxFrames: 6);
+      }
       if (cancelled) break;
     }
+    debugPrint('[KikoScan] 扫描完成，共 ${works.length} 个作品');
     return works;
   }
 
@@ -52,6 +62,9 @@ class LocalLibraryScanner {
     final files = entries.whereType<File>().toList();
     final folderName = p.basename(directory.path);
 
+    debugPrint('[KikoScan] dir=$folderName entries=${entries.length} '
+        'audio=${files.where((f) => classifyFile(p.basename(f.path)) == FileClass.audio).length}');
+
     onProgress?.call(directory.path, works.length);
 
     // ① 表层文件夹名含 RJ 号 → 作品层，不再向下找 RJ（PRD 决策 5）。
@@ -62,7 +75,11 @@ class LocalLibraryScanner {
         dirs: dirs,
         rjFromFolder: parseRjInfo(folderName),
       );
-      if (work != null) works.add(work);
+      if (work != null) {
+        debugPrint('[KikoScan] 作品=${work.rjCode ?? work.title} '
+            'tracks=${work.trackCount} cover=${work.coverSource.name}');
+        works.add(work);
+      }
       return;
     }
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/work.dart';
+import '../providers/library_provider.dart';
 import '../providers/playlist_provider.dart';
 import '../utils/ui_tokens.dart';
 import 'audio_player_screen.dart';
@@ -25,52 +26,118 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
     });
   }
 
+  /// 创建弹窗：双段「新建 / 链接导入」（PRD §5.8 规格）。
   Future<void> _showCreateDialog() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final playlist = context.read<PlaylistProvider>();
+    final library = context.read<LibraryProvider>();
+
+    var mode = 0; // 0 新建 / 1 链接导入。
     final nameController = TextEditingController();
     final descController = TextEditingController();
-    final playlist = context.read<PlaylistProvider>();
+    final linkController = TextEditingController();
 
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('新建播放列表'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: '名称',
-                counterText: '',
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('新建播放列表'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('新建')),
+                  ButtonSegment(value: 1, label: Text('链接导入')),
+                ],
+                selected: {mode},
+                onSelectionChanged: (selection) =>
+                    setDialogState(() => mode = selection.first),
               ),
-              maxLength: 50,
-              autofocus: true,
+              const SizedBox(height: UiSpacing.medium),
+              if (mode == 0) ...[
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                      labelText: '名称', counterText: ''),
+                  maxLength: 50,
+                  autofocus: true,
+                ),
+                const SizedBox(height: UiSpacing.medium),
+                TextField(
+                  controller: descController,
+                  decoration: const InputDecoration(
+                      labelText: '描述（可选）', counterText: ''),
+                  maxLength: 200,
+                ),
+              ] else
+                TextField(
+                  controller: linkController,
+                  decoration: const InputDecoration(
+                    labelText: '粘贴分享文本',
+                    hintText: '支持任意含 RJ 号的文本（自动提取）',
+                    counterText: '',
+                  ),
+                  maxLines: 4,
+                  maxLength: 2000,
+                  autofocus: true,
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
             ),
-            const SizedBox(height: UiSpacing.medium),
-            TextField(
-              controller: descController,
-              decoration: const InputDecoration(
-                labelText: '描述（可选）',
-                counterText: '',
-              ),
-              maxLength: 200,
+            FilledButton(
+              onPressed: () async {
+                Navigator.of(dialogContext).pop();
+                if (mode == 0) {
+                  await playlist.create(nameController.text,
+                      description: descController.text);
+                  return;
+                }
+                // 链接导入：正则提取 RJ 号 → 匹配本地作品 → 批量加歌。
+                final rjCodes = RegExp(r'(RJ|BJ|VJ)(\d{6,8})',
+                        caseSensitive: false)
+                    .allMatches(linkController.text)
+                    .map((m) =>
+                        '${m.group(1)!.toUpperCase()}${m.group(2)}')
+                    .toSet();
+                if (rjCodes.isEmpty) {
+                  messenger.showSnackBar(const SnackBar(
+                      content: Text('未从文本中识别到 RJ 号'),
+                      duration: Duration(seconds: 2)));
+                  return;
+                }
+                final name =
+                    nameController.text.trim().isEmpty ? '导入列表' : nameController.text.trim();
+                await playlist.create(name);
+                final created =
+                    playlist.playlists.firstOrNull;
+                if (created == null) return;
+                var added = 0;
+                for (final rj in rjCodes) {
+                  final work = library.works
+                      .where((w) => w.rjCode == rj)
+                      .firstOrNull;
+                  if (work == null) continue;
+                  final nodes = await library.nodesOf(work);
+                  for (final node in nodes.where((n) => !n.isDirectory)) {
+                    await playlist.addTrack(created.id, work, node);
+                    added++;
+                  }
+                }
+                messenger.showSnackBar(SnackBar(
+                  content: Text(
+                      '导入完成：识别 ${rjCodes.length} 个 RJ，本地匹配加入 $added 首（未下载的作品自动跳过）'),
+                  duration: const Duration(seconds: 4),
+                ));
+              },
+              child: const Text('创建'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              playlist.create(nameController.text,
-                  description: descController.text);
-              Navigator.of(dialogContext).pop();
-            },
-            child: const Text('创建'),
-          ),
-        ],
       ),
     );
   }

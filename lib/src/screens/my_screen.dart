@@ -7,6 +7,7 @@ import '../widgets/enhanced_work_card.dart';
 import 'downloads_screen.dart';
 import 'history_tab.dart';
 import 'playlists_screen.dart';
+import 'subtitle_library_tab.dart';
 import 'work_detail_screen.dart';
 
 /// Tab3 我的页（M2：本地库 + 下载管理；历史/播放列表/字幕库 M4 补齐）。
@@ -20,7 +21,7 @@ class MyScreen extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: Text('我的', style: UiTextStyles.pageTitle),
@@ -29,8 +30,8 @@ class MyScreen extends StatelessWidget {
               Tab(text: '本地库'),
               Tab(text: '历史'),
               Tab(text: '播放列表'),
+              Tab(text: '字幕库'),
               Tab(text: '下载管理'),
-              // 字幕库（后续）。
             ],
           ),
         ),
@@ -65,6 +66,7 @@ class MyScreen extends StatelessWidget {
                   ),
             const HistoryTab(),
             const PlaylistsScreen(),
+            const SubtitleLibraryTab(),
             const DownloadsScreen(),
           ],
         ),

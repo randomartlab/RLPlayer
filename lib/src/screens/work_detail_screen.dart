@@ -328,20 +328,24 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
             onTrackTap: (index, node) => unawaited(_playFrom(index)),
           ),
 
-          // ⑪ 推荐位：横向滚动卡片列，高 190dp，卡片宽 120dp
-          // （内容源：同社团/同标签的其他本地作品，PRD §5.5）。
-          if (related.isNotEmpty) ...[
+          // ⑪ 推荐位：本地同社团在前 + asmr.one 同社团网络推荐补充
+          // （用户需求 2026-09-01：有 RJ 且能拉到信息的作品拉网络推荐）。
+          if (related.isNotEmpty || _onlineRelated.isNotEmpty) ...[
             _SectionHeader(title: '相关推荐'),
             SizedBox(
               height: 190,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: related.length,
+                itemCount: related.length + _onlineRelated.length,
                 separatorBuilder: (context, index) =>
                     const SizedBox(width: UiSpacing.medium),
-                itemBuilder: (context, index) => _RelatedCard(
-                  work: related[index],
-                ),
+                itemBuilder: (context, index) {
+                  if (index < related.length) {
+                    return _RelatedCard(work: related[index]);
+                  }
+                  return _OnlineRelatedCard(
+                      work: _onlineRelated[index - related.length]);
+                },
               ),
             ),
           ],

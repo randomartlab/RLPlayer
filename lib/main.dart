@@ -1,0 +1,73 @@
+import 'package:audio_service/audio_service.dart';
+import 'package:dynamic_color/dynamic_color.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import 'src/providers/audio_provider.dart';
+import 'src/providers/theme_mode.dart';
+import 'src/providers/theme_provider.dart';
+import 'src/providers/ui_settings_provider.dart';
+import 'src/screens/main_screen.dart';
+import 'src/services/audio_player_service.dart';
+import 'src/utils/theme.dart';
+
+/// KikoLocal —— KikoFlu 像素级复刻的本地播放安卓音乐播放器。
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 播放内核：audio_service 后台服务 + just_audio（KikoFlu 播放组合沿用）。
+  final handler = await AudioService.init(
+    builder: AudioPlayerHandler.new,
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'dev.kikolocal.channel.audio',
+      androidNotificationChannelName: 'KikoLocal 播放',
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true,
+    ),
+  );
+
+  runApp(KikoLocalApp(handler: handler));
+}
+
+class KikoLocalApp extends StatelessWidget {
+  const KikoLocalApp({super.key, required this.handler});
+
+  final AudioPlayerHandler handler;
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeSettingsProvider()),
+        ChangeNotifierProvider(create: (_) => UiSettingsProvider()),
+        ChangeNotifierProvider(create: (_) => AudioPlayerProvider(handler)),
+      ],
+      child: DynamicColorBuilder(
+        builder: (lightDynamic, darkDynamic) {
+          return Consumer<ThemeSettingsProvider>(
+            builder: (context, themeSettings, _) {
+              final settings = themeSettings.settings;
+              final useDynamic = settings.colorSchemeType ==
+                  ColorSchemeType.dynamic;
+
+              return MaterialApp(
+                title: 'KikoLocal',
+                debugShowCheckedModeBanner: false,
+                theme: AppTheme.lightTheme(
+                  useDynamic ? lightDynamic : null,
+                  settings.colorSchemeType,
+                ),
+                darkTheme: AppTheme.darkTheme(
+                  useDynamic ? darkDynamic : null,
+                  settings.colorSchemeType,
+                ),
+                themeMode: settings.toThemeMode(),
+                home: const MainScreen(),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}

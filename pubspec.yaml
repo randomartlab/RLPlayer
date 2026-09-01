@@ -1,0 +1,40 @@
+name: kiko_local
+description: "KikoLocal - KikoFlu 像素级复刻的本地播放安卓音乐播放器"
+publish_to: 'none'
+
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # 主题动态取色（PRD §11.1 沿用清单）
+  dynamic_color: ^1.7.0
+
+  # 状态管理（沿用 KikoFlu provider 方案）
+  provider: ^6.1.2
+
+  # 播放内核（沿用 KikoFlu 组合：just_audio + audio_service + audio_session）
+  just_audio: ^0.10.6
+  audio_service: ^0.18.17
+  audio_session: ^0.2.2
+
+  # 存储
+  shared_preferences: ^2.3.2
+  path: ^1.9.0
+  path_provider: ^2.1.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/demo/

@@ -46,6 +46,11 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
   Duration? _duration;
   String? _lyricsTrackId;
 
+  /// 字幕/歌词统一解析：lrc 优先，失败走 vtt/srt。
+  Lyrics? _parseAnySubtitle(String content) {
+    return Lyrics.parse(content) ?? parseVttOrSrt(content);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -78,12 +83,16 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
 
     // 字幕/歌词三级降级：本地 lrc → 本地 vtt/srt → 在线字幕 URL。
     if (lyricPath == null) {
+      // 字幕双轨解析：lrc（Lyrics.parse）→ vtt/srt（parseVttOrSrt），
+      // 覆盖全部字幕格式（实机反馈 2026-09-01：在线 .lrc 字幕被 vtt 解析
+      // 器吞掉导致"无歌词"）。
       final subtitlePath = track?.subtitlePath;
       if (subtitlePath != null) {
         try {
           final text = await File(subtitlePath).readAsString();
           if (mounted) {
-            setState(() => _lyricController.lyrics = parseVttOrSrt(text));
+            setState(() =>
+                _lyricController.lyrics = _parseAnySubtitle(text));
           }
         } catch (_) {
           _lyricController.lyrics = null;
@@ -95,8 +104,10 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
         try {
           final response = await Dio().get<String>(subtitleUrl);
           final text = response.data;
-          final parsed = text == null ? null : parseVttOrSrt(text);
-          if (mounted) setState(() => _lyricController.lyrics = parsed);
+          if (mounted) {
+            setState(() => _lyricController.lyrics =
+                text == null ? null : _parseAnySubtitle(text));
+          }
         } catch (_) {
           if (mounted) setState(() => _lyricController.lyrics = null);
         }

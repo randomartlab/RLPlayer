@@ -147,9 +147,9 @@ class _DirectoryRow extends StatelessWidget {
               child: Text(
                 node.name,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w500, fontSize: 20),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 20,
+                    height: 1.35),
               ),
             ),
             Icon(
@@ -215,8 +215,6 @@ class _TrackRow extends StatelessWidget {
                         .textTheme
                         .bodyMedium
                         ?.copyWith(fontSize: 20),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 3),
                   Row(

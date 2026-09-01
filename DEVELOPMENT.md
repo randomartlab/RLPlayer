@@ -255,3 +255,12 @@ flutter test                  # 中文路径下正常
 
 待办（M5 第二批）：悬浮桌面歌词（flutter_overlay_window）、增益、
 字幕显示开关、暗色全量复查、性能
+
+## M5 二期（2026-09-01 深夜）
+
+- **字体大小调整**：设置→外观：界面字体（0.8-1.4×，MaterialApp builder
+  textScaler 全局生效）+ 歌词字体（0.8-2.0×，LyricView 独立缩放）
+- **悬浮桌面歌词**（PRD §5.6.7）：flutter_overlay_window + overlayMain 入口 +
+  clickThrough 点击穿透 + 可拖动；LyricController 全局化到
+  AudioPlayerProvider（播放器关闭后悬浮歌词仍随播放推进）；播放器控制区
+  开关按钮；MuMu 已预授权 SYSTEM_ALERT_WINDOW（cmd appops set ... allow）

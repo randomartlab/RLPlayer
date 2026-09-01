@@ -9,6 +9,7 @@ class OnlineWork {
     required this.title,
     this.titleTranslation,
     this.circleName,
+    this.circleId,
     this.vas = const [],
     this.tags = const [],
     this.nsfw = false,
@@ -25,6 +26,9 @@ class OnlineWork {
   final String title;
   final String? titleTranslation;
   final String? circleName;
+
+  /// 服务端社团 id（相关推荐按社团检索用）。
+  final int? circleId;
   final List<String> vas;
   final List<String> tags;
   final bool nsfw;
@@ -45,6 +49,8 @@ class OnlineWork {
       titleTranslation: json['titleTranslation'] as String?,
       circleName: (json['circle'] as Map<String, dynamic>?)?['name']
           as String?,
+      circleId: ((json['circle'] as Map<String, dynamic>?)?['id'] as num?)
+          ?.toInt(),
       vas: ((json['vas'] as List?) ?? const [])
           .map((va) => ((va as Map)['name'] ?? '') as String)
           .where((name) => name.isNotEmpty)

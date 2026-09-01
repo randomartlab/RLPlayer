@@ -1,9 +1,12 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/net_meta.dart';
+import '../models/online_models.dart';
+import '../providers/mirror_provider.dart';
 import '../models/work.dart';
 import '../services/net_meta_service.dart';
 import '../providers/audio_provider.dart';
@@ -13,6 +16,7 @@ import '../utils/ui_tokens.dart';
 import '../widgets/enhanced_work_card.dart';
 import '../widgets/file_tree_view.dart';
 import 'audio_player_screen.dart';
+import 'online_work_detail_screen.dart';
 
 /// 本地作品详情页（PRD §5.5，骨架 = OfflineWorkDetailScreen + WorkDetailScreen
 /// 视觉规格；网络参考区 M4 里程碑引入，当前页面 100% 本地信息）。
@@ -32,6 +36,9 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
 
   /// 封面兜底回写后的最新作品对象（覆盖 widget.work 显示）。
   Work? _workOverride;
+
+  /// 网络相关推荐（asmr.one 同社团，M5 用户需求）。
+  List<OnlineWork> _onlineRelated = [];
 
   @override
   void initState() {
@@ -66,11 +73,36 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           if (fresh != null) _workOverride = fresh;
         });
       }
+      // 网络相关推荐：能拉到元数据的作品 → asmr.one 同社团作品。
+      if (meta != null && !meta.noResult) {
+        await _loadOnlineRelated();
+      }
     } catch (e) {
       // 网络参考 best-effort：失败静默不显示（PRD 决策 4）；但记录原因便于诊断。
       debugPrint('[NetMeta] 详情页拉取失败: $e');
     } finally {
       if (mounted) setState(() => _netMetaLoading = false);
+    }
+  }
+
+  /// 网络相关推荐（asmr.one 同社团；本地推荐在前、网络补充在后）。
+  Future<void> _loadOnlineRelated() async {
+    try {
+      final mirror = context.read<MirrorProvider>();
+      final numeric = int.tryParse((widget.work.rjCode ?? '')
+          .replaceFirst(RegExp('^(RJ|BJ|VJ)', caseSensitive: false), ''));
+      if (numeric == null) return;
+      final detail = await mirror.api.getWork(numeric);
+      final circleId = detail.circleId;
+      if (circleId == null) return;
+      final related = await mirror.api.getCircleWorks(circleId, pageSize: 12);
+      final filtered =
+          related.where((w) => w.id != numeric).toList(growable: false);
+      if (mounted) {
+        setState(() => _onlineRelated = filtered.take(10).toList());
+      }
+    } catch (_) {
+      // 网络推荐 best-effort：失败静默（本地推荐仍显示）。
     }
   }
 
@@ -211,13 +243,6 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
 
           const SizedBox(height: UiSpacing.large),
 
-          // ⑩ 文件树（恒展开；目录默认收起，点按展开）。
-          _SectionHeader(title: '文件'),
-          FileTreeView(
-            nodes: _nodes,
-            onTrackTap: (index, node) => unawaited(_playFrom(index)),
-          ),
-
           // ---- 网络参考信息（M11，PRD §5.5 ④–⑨：独立区块，辅助样式）----
           if (_netMetaLoading)
             const Padding(
@@ -295,6 +320,13 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           ],
 
           const SizedBox(height: UiSpacing.large),
+
+          // ⑩ 文件树（恒展开；目录默认收起，点按展开）。
+          _SectionHeader(title: '文件'),
+          FileTreeView(
+            nodes: _nodes,
+            onTrackTap: (index, node) => unawaited(_playFrom(index)),
+          ),
 
           // ⑪ 推荐位：横向滚动卡片列，高 190dp，卡片宽 120dp
           // （内容源：同社团/同标签的其他本地作品，PRD §5.5）。
@@ -437,6 +469,62 @@ class _RefLine extends StatelessWidget {
         ),
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+}
+
+
+/// 网络相关推荐卡（asmr.one 同社团作品）。
+class _OnlineRelatedCard extends StatelessWidget {
+  const _OnlineRelatedCard({required this.work});
+
+  final OnlineWork work;
+
+  @override
+  Widget build(BuildContext context) {
+    final mirror = context.read<MirrorProvider>();
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 120,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (context) => OnlineWorkDetailScreen(work: work),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(UiRadii.control),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 4 / 3,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(UiRadii.control),
+                child: CachedNetworkImage(
+                  imageUrl: mirror.api.coverUrl(work.id),
+                  fit: BoxFit.cover,
+                  placeholder: (context, url) =>
+                      Container(color: scheme.surfaceContainerHighest),
+                  errorWidget: (context, url, error) => Container(
+                    color: scheme.surfaceContainerHighest,
+                    child: Icon(Icons.album,
+                        color: scheme.onSurfaceVariant, size: 24),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: UiSpacing.xSmall),
+            Text(
+              work.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, height: 1.3),
+            ),
+          ],
+        ),
       ),
     );
   }

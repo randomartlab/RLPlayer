@@ -132,6 +132,22 @@ class KikoeruApiService {
         .toList();
   }
 
+  /// 同社团作品（本地详情页网络相关推荐，M5 用户需求）。
+  Future<List<OnlineWork>> getCircleWorks(int circleId,
+      {int pageSize = 10}) async {
+    final response = await _dio.get('/api/circles/$circleId/works',
+        queryParameters: {
+          'page': 1,
+          'pageSize': pageSize,
+          'order': 'release',
+          'sort': 'desc',
+        });
+    final data = response.data as Map<String, dynamic>;
+    return (((data['works'] ?? data['pagination']?['works']) as List? ?? const []))
+        .map((w) => OnlineWork.fromJson(w as Map<String, dynamic>))
+        .toList();
+  }
+
   // ---- 收藏（服务端书签） ----
 
   Future<List<OnlineWork>> getFavorites({int page = 1}) async {

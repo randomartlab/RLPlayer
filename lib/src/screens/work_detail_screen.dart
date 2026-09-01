@@ -79,13 +79,15 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     final audio = context.read<AudioPlayerProvider>();
     final tracks = tracksOf(widget.work, _nodes);
     if (tracks.isEmpty) return;
-    await audio.playTracks(tracks, initialIndex: trackIndex);
+    // 零延迟：先跳转播放器，音源后台加载（播放器自带 loading 态）。
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => const AudioPlayerScreen(),
       ),
     );
+    final index = trackIndex.clamp(0, tracks.length - 1);
+    unawaited(audio.playTracks(tracks, initialIndex: index));
   }
 
   Future<void> _confirmRemove() async {

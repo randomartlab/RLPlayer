@@ -59,6 +59,7 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   Stream<Duration> get seekEvents => _seekEvents.stream;
 
+  /// 立即反馈：currentTrack/迷你播放条先就位，音源加载后台进行（零感知延迟）。
   Future<void> playTracks(List<AudioTrack> tracks, {int initialIndex = 0}) async {
     _miniPlayerVisible = true;
     notifyListeners();

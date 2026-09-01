@@ -33,14 +33,21 @@ class LyricController extends ChangeNotifier {
   /// 视图层在收到通知后立即发起，新的 animateTo 会取消未完成的动画。
   void locateTo(Duration t) {
     final lyrics = _lyrics;
-    if (lyrics == null || lyrics.isEmpty) return;
+    if (lyrics == null || lyrics.isEmpty) {
+      debugPrint('[Lyric] locateTo 跳过：无歌词 t=${t.inSeconds}s');
+      return;
+    }
 
     final index = lyrics.lineIndexAt(t);
     if (index != activeIndex) {
+      debugPrint('[Lyric] locateTo ${t.inSeconds}s → 行 $index '
+          '「${lines(index).text}」');
       activeIndex = index;
       notifyListeners();
     }
   }
+
+  LyricLine lines(int index) => _lyrics!.lines[index];
 }
 
 /// 歌词视图（PRD §5.6.4 像素级规格）。
@@ -56,6 +63,7 @@ class LyricView extends StatefulWidget {
     required this.positionStream,
     required this.seekEventStream,
     this.onActiveTextChanged,
+    this.onSeekTo,
   });
 
   final LyricController controller;
@@ -67,6 +75,9 @@ class LyricView extends StatefulWidget {
   final Stream<Duration> seekEventStream;
 
   final ValueChanged<String?>? onActiveTextChanged;
+
+  /// 点击歌词行 → seek 到该行时间戳（零延迟跳转）。
+  final ValueChanged<Duration>? onSeekTo;
 
   @override
   State<LyricView> createState() => _LyricViewState();
@@ -162,7 +173,16 @@ class _LyricViewState extends State<LyricView> {
         final line = lyrics.lines[index];
         final isActive = index == controller.activeIndex;
 
-        return Padding(
+        return GestureDetector(
+          // 点击歌词行 → 立即 seek 到该行（用户反馈：点击歌词跳转进度）。
+          onTap: () {
+            final callback = widget.onSeekTo;
+            if (callback != null) {
+              debugPrint('[Lyric] 点击行 $index → seek ${line.timestamp}');
+              callback(line.timestamp);
+            }
+          },
+          child: Padding(
           key: _keyFor(index),
           padding: const EdgeInsets.symmetric(vertical: UiSpacing.medium),
           child: Container(
@@ -188,6 +208,7 @@ class _LyricViewState extends State<LyricView> {
                 height: 1.5,
               ),
             ),
+          ),
           ),
         );
       },

@@ -42,6 +42,12 @@ dependencies:
   dio: ^5.11.0
   flutter_secure_storage: ^11.0.0
   cached_network_image: ^3.4.1
+  media_kit: ^1.2.6
+  media_kit_libs_android_audio: ^1.3.8
+  # 本地 fork：补 setAndroidAudioAttributes 空实现（media_kit 后端 + audio_service 组合修复）
+  just_audio_media_kit:
+    path: third_party/just_audio_media_kit
+  # just_audio_media_kit_orig: ^2.1.0
 
 dev_dependencies:
   flutter_test:

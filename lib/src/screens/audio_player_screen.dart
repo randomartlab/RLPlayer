@@ -237,6 +237,8 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                       controller: _lyricController,
                       positionStream: audio.positionStream,
                       seekEventStream: audio.seekEvents,
+                      onSeekTo: (position) =>
+                          unawaited(audio.seek(position)),
                     )
                   : KeyedSubtree(
                       key: const ValueKey('cover'),

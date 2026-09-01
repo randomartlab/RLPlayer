@@ -1,4 +1,5 @@
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/audio_track.dart';
@@ -18,6 +19,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   AudioPlayer get player => _player;
 
   AudioPlayerHandler() {
+    _configureAudioSession();
     _notifyPlaybackState();
     _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
     _player.durationStream.listen((duration) {
@@ -92,6 +94,16 @@ class AudioPlayerHandler extends BaseAudioHandler {
       await _loadIndex(index.clamp(0, _queue.length - 1), autoPlay: true);
     }
     _notifyPlaybackState();
+  }
+
+  /// 显式配置音频会话（部分模拟器需要明确的 usage 路由才创建 AudioTrack）。
+  Future<void> _configureAudioSession() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+    } catch (_) {
+      // 配置失败不阻塞播放。
+    }
   }
 
   /// 把 just_audio 播放事件转成 audio_service PlaybackState（通知栏控制源）。

@@ -30,6 +30,26 @@ class LocalLibraryScanner {
 
   final Set<String> _embeddedCoverWritten = {};
 
+  /// 已有作品签名（rootPath → 文件数:总字节），增量扫描比对用。
+  final Map<String, String> existingSignatures = {};
+
+  /// 计算目录签名（文件数 + 总字节；快速变更检测，增量扫描优化）。
+  Future<String> _dirSignature(String dirPath) async {
+    var count = 0;
+    var bytes = 0;
+    final dir = Directory(dirPath);
+    if (!await dir.exists()) return '';
+    await for (final entity in dir.list(recursive: true, followLinks: false)) {
+      if (entity is File) {
+        count++;
+        try {
+          bytes += await entity.length();
+        } catch (_) {}
+      }
+    }
+    return '$count:$bytes';
+  }
+
   /// 穿透扫描多个根目录，返回全部识别结果。
   Future<List<ScannedWork>> scanRoots(List<String> rootPaths) async {
     final works = <ScannedWork>[];
@@ -164,16 +184,25 @@ class LocalLibraryScanner {
     rjCode ??= _rjFromMetadata(metadata);
 
     // ---- 4. 音轨时长提取（元数据读取；失败标记未知） ----
+    // 增量优化：目录签名未变（文件数+总字节相同）时跳过逐文件元数据解析
+    // （最耗时阶段），识别速度大幅提升；时长视为未知由首次播放回写。
+    final signature = await _dirSignature(workDir.path);
+    final unchanged =
+        existingSignatures[workDir.path] == signature && signature.isNotEmpty;
+    if (signature.isNotEmpty) existingSignatures[workDir.path] = signature;
+
     final durations = <File, int?>{};
     final keepAudio = <File>[];
     for (final audio in audioFiles) {
       final size = await audio.length();
       int? durationSeconds;
-      try {
-        final meta = readMetadata(audio);
-        durationSeconds = meta.duration?.inSeconds;
-      } catch (_) {
-        // 时长提取失败 → 未知；首次播放后回写（M4 里程碑实现回写）。
+      if (!unchanged) {
+        try {
+          final meta = readMetadata(audio);
+          durationSeconds = meta.duration?.inSeconds;
+        } catch (_) {
+          // 时长提取失败 → 未知；首次播放后回写。
+        }
       }
       if (isTinyAudio(size, durationSeconds)) continue; // 小文件过滤
       durations[audio] = durationSeconds;

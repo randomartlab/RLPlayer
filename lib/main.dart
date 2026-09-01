@@ -10,6 +10,7 @@ import 'src/providers/library_provider.dart';
 import 'src/providers/mirror_provider.dart';
 import 'src/providers/online_provider.dart';
 import 'src/providers/playlist_provider.dart';
+import 'src/providers/preferences_provider.dart';
 import 'src/providers/theme_mode.dart';
 import 'src/providers/theme_provider.dart';
 import 'src/providers/ui_settings_provider.dart';
@@ -66,6 +67,7 @@ class KikoLocalApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AudioPlayerProvider(handler)),
         ChangeNotifierProvider(create: (_) => LibraryProvider()),
         ChangeNotifierProvider(create: (_) => MirrorProvider()),
+        ChangeNotifierProvider(create: (_) => PreferencesProvider()),
       ],
       child: DynamicColorBuilder(
         builder: (lightDynamic, darkDynamic) {

@@ -67,6 +67,12 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
     final online = context.watch<OnlineProvider>();
     final mirror = context.watch<MirrorProvider>();
     final scheme = Theme.of(context).colorScheme;
+    // 首次进入加载书签状态（游客静默失败）。
+    if (!online.favoritesLoaded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        online.loadFavorites();
+      });
+    }
 
     return Column(
       children: [

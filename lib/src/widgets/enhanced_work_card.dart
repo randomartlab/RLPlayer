@@ -42,18 +42,22 @@ class EnhancedWorkCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 卡片宽度-字号联动（PRD §4.7）：字体缩放 ≥1.5× 时网格模式隐藏
+    // 文字只留封面（紧凑卡/中卡），点入详情必见完整名称；列表模式不受影响。
+    final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
+    final hideText = textScale >= 1.5 && size != WorkCardSize.list;
+
     return switch (size) {
-      WorkCardSize.compact => _CompactCard(work: work, onTap: onTap),
+      WorkCardSize.compact => _CompactCard(
+          work: work, onTap: onTap, hideText: hideText),
       WorkCardSize.list => _ListCard(
           work: work,
           onTap: onTap,
           onLongPress: onLongPress,
         ),
       WorkCardSize.medium => _MediumCard(
-          work: work,
-          onTap: onTap,
-          onLongPress: onLongPress,
-        ),
+          work: work, onTap: onTap, onLongPress: onLongPress,
+          hideText: hideText),
     };
   }
 }
@@ -192,11 +196,13 @@ String? _formatDuration(int? seconds) {
 // ---- 中卡（大网格 / 封面墙）----
 
 class _MediumCard extends StatelessWidget {
-  const _MediumCard({required this.work, required this.onTap, this.onLongPress});
+  const _MediumCard(
+      {required this.work, required this.onTap, this.onLongPress, this.hideText = false});
 
   final Work work;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
+  final bool hideText;
 
   @override
   Widget build(BuildContext context) {
@@ -210,6 +216,9 @@ class _MediumCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (hideText)
+              Expanded(child: _coverOnly(context))
+            else ...[
             // 封面 AspectRatio 1.3 + Hero 转场（tag 与详情页一致）。
             Hero(
               tag: 'work_cover_${work.id}',
@@ -281,8 +290,36 @@ class _MediumCard extends StatelessWidget {
               ],
             ),
             // 评分/CV/标签行：NetMeta 未缓存整行隐藏（M4 引入）。
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// 大字体缩放模式：仅封面撑满卡片。
+  Widget _coverOnly(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Hero(
+      tag: 'work_cover_${work.id}',
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          WorkCover(work: work),
+          Positioned(
+            left: UiSpacing.xSmall,
+            bottom: UiSpacing.xSmall,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(UiRadii.tag),
+              ),
+              child: Text(work.rjCode ?? '本地',
+                  style: const TextStyle(color: Colors.white, fontSize: 10)),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -291,10 +328,11 @@ class _MediumCard extends StatelessWidget {
 // ---- 紧凑卡（小网格）----
 
 class _CompactCard extends StatelessWidget {
-  const _CompactCard({required this.work, required this.onTap});
+  const _CompactCard({required this.work, required this.onTap, this.hideText = false});
 
   final Work work;
   final VoidCallback onTap;
+  final bool hideText;
 
   @override
   Widget build(BuildContext context) {
@@ -306,27 +344,31 @@ class _CompactCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AspectRatio(
-              aspectRatio: WorkCardVariant.compactCoverRatio,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  WorkCover(work: work),
-                  _RjBadge(text: work.rjCode ?? '本地'),
-                ],
+            Expanded(
+              child: AspectRatio(
+                aspectRatio: WorkCardVariant.compactCoverRatio,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    WorkCover(work: work),
+                    _RjBadge(text: work.rjCode ?? '本地'),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: UiSpacing.xSmall),
-            // 标题 12sp 单行省略（§4.7 卡片例外条款；点入详情必见完整名称）。
-            Text(
-              work.title,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+            if (!hideText) ...[
+              const SizedBox(height: UiSpacing.xSmall),
+              // 标题 12sp 单行省略（§4.7 卡片例外条款）。
+              Text(
+                work.title,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            ],
           ],
         ),
       ),

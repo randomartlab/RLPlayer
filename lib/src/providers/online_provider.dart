@@ -23,7 +23,58 @@ class OnlineProvider extends ChangeNotifier {
   /// 详情缓存（避免重复拉取）。
   final Map<int, OnlineWork> _detailCache = {};
 
-  List<OnlineWork> get works => List.unmodifiable(_works);
+  /// 书签收藏状态（服务端同步；游客模式仅本地内存态）。
+  final Set<int> _favoriteIds = {};
+  bool favoritesLoaded = false;
+
+  Set<int> get favoriteIds => Set.unmodifiable(_favoriteIds);
+
+  Future<void> loadFavorites() async {
+    if (favoritesLoaded) return;
+    try {
+      final works = await mirror.api.getFavorites();
+      _favoriteIds
+        ..clear()
+        ..addAll(works.map((w) => w.id));
+      favoritesLoaded = true;
+      debugPrint('[Online] 书签加载: ${_favoriteIds.length} 个');
+      notifyListeners();
+    } catch (_) {
+      // 游客/未登录：书签功能降级为本地内存态。
+    }
+  }
+
+  Future<void> toggleFavorite(int workId) async {
+    final isFav = _favoriteIds.contains(workId);
+    // 乐观更新。
+    isFav ? _favoriteIds.remove(workId) : _favoriteIds.add(workId);
+    notifyListeners();
+    try {
+      isFav
+          ? await mirror.api.removeFromFavorites(workId)
+          : await mirror.api.addToFavorites(workId);
+    } catch (_) {
+      // 回滚。
+      isFav ? _favoriteIds.add(workId) : _favoriteIds.remove(workId);
+      notifyListeners();
+    }
+  }
+
+  List<OnlineWork> get favoriteWorks =>
+      _works.where((w) => _favoriteIds.contains(w.id)).toList();
+
+  bool _showFavoritesOnly = false;
+  bool get showFavoritesOnly => _showFavoritesOnly;
+  void toggleFavoritesOnly() {
+    _showFavoritesOnly = !_showFavoritesOnly;
+    notifyListeners();
+  }
+
+  /// 展示列表：收藏模式时过滤书签作品。
+  List<OnlineWork> get works =>
+      List.unmodifiable(_showFavoritesOnly
+          ? _works.where((w) => _favoriteIds.contains(w.id)).toList()
+          : _works);
   bool get loading => _loading;
   String? get error => _error;
   String get order => _order;

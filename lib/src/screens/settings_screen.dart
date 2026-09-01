@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/library_provider.dart';
 import '../providers/audio_provider.dart';
+import '../providers/preferences_provider.dart';
 import '../providers/mirror_provider.dart';
 import '../providers/theme_mode.dart';
 import '../providers/theme_provider.dart';
@@ -12,6 +13,7 @@ import '../providers/ui_settings_provider.dart';
 import '../utils/ui_tokens.dart';
 import 'folder_picker_screen.dart';
 import 'mirror_management_screen.dart';
+import 'package:kiko_local/src/services/net_meta_service.dart';
 
 /// Tab4 设置页（M1 实现外观主题 + 导航样式；M3/M4 里程碑补齐服务器账号、
 /// 下载存储、偏好分组，PRD §5.10）。
@@ -25,6 +27,7 @@ class SettingsScreen extends StatelessWidget {
     final library = context.watch<LibraryProvider>();
     final mirror = context.watch<MirrorProvider>();
     final audio = context.watch<AudioPlayerProvider>();
+    final prefs = context.watch<PreferencesProvider>();
 
     return Scaffold(
       appBar: AppBar(
@@ -57,6 +60,51 @@ class SettingsScreen extends StatelessWidget {
           _SettingsCard(
             title: '偏好',
             children: [
+              ListTile(
+                leading: _LeadingIcon(
+                    icon: Icons.cloud_outlined, context: context),
+                title: const Text('网络元数据'),
+                subtitle: const Text('详情页拉取 CV/标签/封面参考信息'),
+                trailing: Switch(
+                  value: prefs.metaEnabled,
+                  onChanged: prefs.setMetaEnabled,
+                ),
+              ),
+              ListTile(
+                leading: _LeadingIcon(
+                    icon: Icons.wifi_outlined, context: context),
+                title: const Text('仅 Wi-Fi 拉取'),
+                subtitle: const Text('移动网络下不请求元数据/封面'),
+                trailing: Switch(
+                  value: prefs.wifiOnly,
+                  onChanged: prefs.setWifiOnly,
+                ),
+              ),
+              ListTile(
+                leading: _LeadingIcon(
+                    icon: Icons.subtitles_outlined, context: context),
+                title: const Text('默认显示字幕'),
+                subtitle: const Text('播放器打开时直接进入歌词/字幕视图'),
+                trailing: Switch(
+                  value: prefs.subtitleDefault,
+                  onChanged: prefs.setSubtitleDefault,
+                ),
+              ),
+              ListTile(
+                leading: _LeadingIcon(
+                    icon: Icons.cleaning_services_outlined, context: context),
+                title: const Text('清理元数据缓存'),
+                subtitle: const Text('清空 NetMeta 表与网络封面（本地数据不受影响）'),
+                onTap: () async {
+                  final meta = context.read<NetMetaService>();
+                  await meta.clearCache();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('元数据缓存已清理'),
+                        duration: Duration(seconds: 2)));
+                  }
+                },
+              ),
               ListTile(
                 leading: _LeadingIcon(
                     icon: Icons.graphic_eq_outlined, context: context),

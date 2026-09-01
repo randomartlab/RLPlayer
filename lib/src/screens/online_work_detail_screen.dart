@@ -14,6 +14,7 @@ import '../providers/mirror_provider.dart';
 import '../providers/online_provider.dart';
 import '../utils/ui_tokens.dart';
 import 'audio_player_screen.dart';
+import 'package:kiko_local/src/services/translation_service.dart';
 import 'tag_filter_screen.dart';
 import 'work_detail_screen.dart';
 
@@ -37,6 +38,22 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
   /// 字幕/歌词文件数（用户反馈：是否带字幕应明确标注）。
   int _subtitleCount = 0;
   int _lyricCount = 0;
+
+  /// 标题译文（Google gtx，失败保持 null）。
+  String? _titleTranslation;
+  bool _translating = false;
+
+  Future<void> _translateTitle() async {
+    if (_translating) return;
+    setState(() => _translating = true);
+    final result = await TranslationService.translate(widget.work.title);
+    if (mounted) {
+      setState(() {
+        _titleTranslation = result;
+        _translating = false;
+      });
+    }
+  }
   bool _loading = true;
   bool _tracksLoading = true;
   String? _error;
@@ -45,6 +62,24 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
   void initState() {
     super.initState();
     _loadDetail();
+  }
+
+  /// DLsite 外链：展示可复制链接（避免引入 url_launcher 依赖）。
+  void launchDlsite(BuildContext context, int workId) {
+    final url =
+        'https://www.dlsite.com/maniax/work/=/product_id/RJ${workId.toString().padLeft(6, '0')}.html';
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('DLsite 作品页'),
+        content: SelectableText(url),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('关闭')),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadDetail() async {
@@ -299,6 +334,20 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
       appBar: AppBar(
         title: Text(work.rjCode),
         actions: [
+          // 书签（服务端收藏，M12 用户清单 #1）。
+          IconButton(
+            icon: Icon(online.favoriteIds.contains(work.id)
+                ? Icons.bookmark
+                : Icons.bookmark_border_outlined),
+            tooltip: online.favoriteIds.contains(work.id) ? '移除书签' : '加入书签',
+            onPressed: () => online.toggleFavorite(work.id),
+          ),
+          // 外部链接（DLsite 作品页，#7）。
+          IconButton(
+            icon: const Icon(Icons.open_in_new),
+            tooltip: 'DLsite 作品页',
+            onPressed: () => launchDlsite(context, work.id),
+          ),
           IconButton(
             icon: const Icon(Icons.download_outlined),
             tooltip: '下载全部',

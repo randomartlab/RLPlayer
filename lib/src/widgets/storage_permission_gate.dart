@@ -29,8 +29,19 @@ class _StoragePermissionGateState extends State<StoragePermissionGate> {
   Future<void> _check() async {
     if (!Platform.isAndroid || !mounted) return;
 
-    // 已有读取能力则跳过。
-    if (await Permission.storage.status.isGranted) return;
+    // 全量权限检查（用户需求 2026-09-02：启动时统一检查所有功能所需权限）。
+    final pending = <Permission, String>{};
+
+    // 1. 存储（本地扫描核心）。
+    if (!await Permission.storage.status.isGranted) {
+      pending[Permission.manageExternalStorage] = '文件访问（本地扫描必需）';
+    }
+    // 2. 通知（媒体控制通知栏 + Android 13+ 必需）。
+    if (!await Permission.notification.status.isGranted) {
+      pending[Permission.notification] = '通知（播放控制通知栏）';
+    }
+
+    if (pending.isEmpty) return;
 
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(_promptedKey) ?? false) return; // 只引导一次。
@@ -40,11 +51,25 @@ class _StoragePermissionGateState extends State<StoragePermissionGate> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('授权文件访问'),
-        content: const Text(
-          'KikoLocal 需要访问设备上的音频文件以扫描本地作品库。\n\n'
-          '请在接下来的系统设置中，为 KikoLocal 开启'
-          '「允许管理所有文件」权限。',
+        title: const Text('应用权限'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('以下权限影响对应功能，建议授权：'),
+            const SizedBox(height: 12),
+            for (final desc in pending.values)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle_outline, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(desc)),
+                  ],
+                ),
+              ),
+          ],
         ),
         actions: [
           TextButton(
@@ -62,8 +87,10 @@ class _StoragePermissionGateState extends State<StoragePermissionGate> {
     await prefs.setBool(_promptedKey, true);
 
     if (granted == true) {
-      // 跳转系统「所有文件访问」设置页；返回后自动重扫由用户操作触发。
-      await Permission.manageExternalStorage.request();
+      // 逐项请求（manageExternalStorage 跳系统设置页；notification 弹系统弹窗）。
+      for (final permission in pending.keys) {
+        await permission.request();
+      }
     }
   }
 

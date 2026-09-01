@@ -142,7 +142,7 @@ class _DirectoryRow extends StatelessWidget {
               child: Text(
                 node.name,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w500, fontSize: 15),
+                    fontWeight: FontWeight.w500, fontSize: 20),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -181,8 +181,8 @@ class _TrackRow extends StatelessWidget {
         padding: EdgeInsets.only(
           left: UiSpacing.large + depth * 20.0,
           right: UiSpacing.medium,
-          top: UiSpacing.medium,
-          bottom: UiSpacing.medium,
+          top: UiSpacing.small,
+          bottom: UiSpacing.small,
         ),
         child: Row(
           children: [
@@ -192,7 +192,7 @@ class _TrackRow extends StatelessWidget {
                 '$ordinal',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    fontSize: 14, color: scheme.onSurfaceVariant),
+                    fontSize: 16, color: scheme.onSurfaceVariant),
               ),
             ),
             const SizedBox(width: UiSpacing.medium),
@@ -206,7 +206,7 @@ class _TrackRow extends StatelessWidget {
                     style: Theme.of(context)
                         .textTheme
                         .bodyMedium
-                        ?.copyWith(fontSize: 15),
+                        ?.copyWith(fontSize: 20),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -217,7 +217,7 @@ class _TrackRow extends StatelessWidget {
                         Text(
                           _formatDuration(node.durationSeconds!),
                           style: TextStyle(
-                              fontSize: 13, color: scheme.onSurfaceVariant),
+                              fontSize: 15, color: scheme.onSurfaceVariant),
                         ),
                       if (node.durationSeconds != null &&
                           (node.lyricPath != null || node.subtitlePath != null))

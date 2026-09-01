@@ -466,7 +466,9 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
                 size: UiIconSize.large,
               ),
               title: Text(node.title,
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 20)),
               trailing: Icon(
                   _expanded.contains(node.title)
                       ? Icons.expand_less
@@ -497,6 +499,7 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
                 node.isAudio ? _stripExt(node.title) : node.title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 20),
               ),
               trailing: node.isAudio
                   ? const Icon(Icons.play_circle_outline)

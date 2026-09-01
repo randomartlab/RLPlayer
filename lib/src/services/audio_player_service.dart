@@ -26,6 +26,72 @@ class AudioPlayerHandler extends BaseAudioHandler {
         mediaItem.add(item.copyWith(duration: duration));
       }
     });
+    // 自动连播：单文件播完 → 按循环模式切下一首/上一首（PRD §5.6.3）。
+    _player.playerStateStream.listen((state) {
+      if (state.processingState == ProcessingState.completed) {
+        _onTrackCompleted();
+      }
+    });
+  }
+
+  /// 循环模式（PRD §5.6.3：关闭/列表循环/单曲循环）。
+  LoopMode _loopMode = LoopMode.off;
+  LoopMode get loopMode => _loopMode;
+
+  Future<void> setLoopMode(LoopMode mode) async {
+    _loopMode = mode;
+    await _player.setLoopMode(mode);
+  }
+
+  void _onTrackCompleted() {
+    if (_queue.isEmpty) return;
+    switch (_loopMode) {
+      case LoopMode.one:
+        // 单曲循环：just_audio LoopMode.one 已自动重播；此处兜底。
+        _loadIndex(_player.currentIndex ?? 0, autoPlay: true);
+      case LoopMode.all:
+        final next = (_player.currentIndex ?? 0) + 1;
+        if (next < _queue.length) {
+          _loadIndex(next, autoPlay: true);
+        } else {
+          _loadIndex(0, autoPlay: true); // 列表循环回开头。
+        }
+      case LoopMode.off:
+        final next = (_player.currentIndex ?? 0) + 1;
+        if (next < _queue.length) {
+          _loadIndex(next, autoPlay: true);
+        }
+        // 播完最后一首停止（不循环）。
+    }
+  }
+
+  /// 队列重排（播放队列弹窗拖拽排序，PRD §5.6.5）。
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 ||
+        oldIndex >= _queue.length ||
+        _queue.isEmpty) {
+      return;
+    }
+    // onReorderItem 已对移除项自动修正 newIndex。
+    final item = _queue.removeAt(oldIndex);
+    _queue.insert(newIndex.clamp(0, _queue.length), item);
+    // 若当前曲被移动，校正 currentIndex（just_audio 索引不变，仍指向当前文件）。
+    _notifyPlaybackState();
+  }
+
+  /// 队列删除（左滑删除）。
+  Future<void> removeAt(int index) async {
+    if (index < 0 || index >= _queue.length) return;
+    final isCurrent = index == (_player.currentIndex ?? -1);
+    _queue.removeAt(index);
+    if (_queue.isEmpty) {
+      await stop();
+      return;
+    }
+    if (isCurrent) {
+      await _loadIndex(index.clamp(0, _queue.length - 1), autoPlay: true);
+    }
+    _notifyPlaybackState();
   }
 
   /// 把 just_audio 播放事件转成 audio_service PlaybackState（通知栏控制源）。

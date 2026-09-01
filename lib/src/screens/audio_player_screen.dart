@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:just_audio/just_audio.dart' show LoopMode;
 import 'package:provider/provider.dart';
 
 import '../models/audio_track.dart';
@@ -12,6 +13,7 @@ import '../providers/audio_provider.dart';
 import '../services/scan_rules.dart';
 import '../utils/ui_tokens.dart';
 import '../widgets/player/lyric_view.dart';
+import '../widgets/player/playlist_dialog.dart';
 
 /// 全屏播放器（KikoFlu `audio_player_screen.dart` Android 版骨架，PRD §5.6）。
 ///
@@ -131,10 +133,26 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         actions: [
+          // 循环模式（PRD §5.6.3 三态）。
+          IconButton(
+            icon: _loopModeIcon(audio.loopMode),
+            tooltip: _loopModeLabel(audio.loopMode),
+            onPressed: () {
+              audio.cycleLoopMode();
+              setState(() {});
+            },
+          ),
+          // 倍速。
+          TextButton(
+            onPressed: () => showSpeedSheet(context),
+            child: Text('${audio.speed.toStringAsFixed(2)}×',
+                style: const TextStyle(fontSize: 14)),
+          ),
+          // 播放队列（PRD §5.6.5）。
           IconButton(
             icon: const Icon(Icons.queue_music),
             tooltip: '播放队列',
-            onPressed: () {}, // M5：播放队列弹窗
+            onPressed: () => showPlaylistDialog(context),
           ),
         ],
       ),
@@ -445,19 +463,41 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
               icon: const Icon(Icons.subtitles_outlined),
               iconSize: UiIconSize.standard,
               tooltip: '悬浮字幕',
-              onPressed: () {}, // M5：悬浮字幕
+              onPressed: null, // 下一批：悬浮字幕（M5 二期）
             ),
             IconButton(
-              icon: const Icon(Icons.bedtime_outlined),
+              icon: Icon(
+                audio.sleepAt != null
+                    ? Icons.bedtime
+                    : Icons.bedtime_outlined,
+                color: audio.sleepAt != null
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
+              ),
               iconSize: UiIconSize.standard,
               tooltip: '睡眠定时',
-              onPressed: () {}, // M5：睡眠定时
+              onPressed: () => showSleepTimerSheet(context),
             ),
           ],
         ),
       ],
     );
   }
+
+  Widget _loopModeIcon(LoopMode mode) {
+    return switch (mode) {
+      LoopMode.all => const Icon(Icons.repeat),
+      LoopMode.one => const Icon(Icons.repeat_one),
+      LoopMode.off => Icon(Icons.repeat,
+          color: Theme.of(context).disabledColor),
+    };
+  }
+
+  String _loopModeLabel(LoopMode mode) => switch (mode) {
+        LoopMode.all => '列表循环',
+        LoopMode.one => '单曲循环',
+        LoopMode.off => '循环关闭',
+      };
 
   /// 快退 / 快进固定 10 秒（PRD §5.6.3）；走 seek 统一入口联动歌词。
   void _skipBy(AudioPlayerProvider audio, Duration delta) {

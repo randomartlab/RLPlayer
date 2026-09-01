@@ -4,7 +4,9 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../models/net_meta.dart';
 import '../models/work.dart';
+import '../services/history_service.dart';
 
 /// 本地作品库数据库（PRD §6.2：SQLite 作品库索引 + 音轨表含关联列）。
 ///
@@ -14,7 +16,7 @@ class LocalLibraryDatabase {
   LocalLibraryDatabase._(this._db);
 
   static const String _dbName = 'kiko_local.db';
-  static const int _dbVersion = 1;
+  static const int _dbVersion = 3;
 
   final Database _db;
 
@@ -22,6 +24,48 @@ class LocalLibraryDatabase {
     final db = await openDatabase(
       p.join(await getDatabasesPath(), _dbName),
       version: _dbVersion,
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('''
+            CREATE TABLE net_meta (
+              rj_code TEXT PRIMARY KEY,
+              work_id INTEGER,
+              net_title TEXT,
+              net_title_trans TEXT,
+              net_circle TEXT,
+              net_vas TEXT,
+              net_tags TEXT,
+              net_cover_url TEXT,
+              net_description TEXT,
+              net_release TEXT,
+              net_rate_average REAL,
+              net_rate_count INTEGER,
+              source TEXT NOT NULL,
+              fetched_at INTEGER NOT NULL,
+              no_result INTEGER NOT NULL DEFAULT 0
+            )
+          ''');
+        }
+        if (oldVersion < 3) {
+          // 播放历史（M7，断点续播）。
+          await db.execute('''
+            CREATE TABLE play_history (
+              track_key TEXT PRIMARY KEY,
+              node_id INTEGER,
+              work_id INTEGER,
+              track_title TEXT NOT NULL,
+              work_title TEXT NOT NULL,
+              cover_path TEXT,
+              artwork_url TEXT,
+              position_ms INTEGER NOT NULL,
+              duration_ms INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL
+            )
+          ''');
+          await db.execute(
+              'CREATE INDEX idx_history_updated ON play_history(updated_at DESC)');
+        }
+      },
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE works (
@@ -61,6 +105,43 @@ class LocalLibraryDatabase {
         ''');
         await db.execute(
             'CREATE INDEX idx_nodes_work ON file_nodes(work_id)');
+        // NetMeta：网络参考元数据缓存（M11）。
+        await db.execute('''
+          CREATE TABLE net_meta (
+            rj_code TEXT PRIMARY KEY,
+            work_id INTEGER,
+            net_title TEXT,
+            net_title_trans TEXT,
+            net_circle TEXT,
+            net_vas TEXT,
+            net_tags TEXT,
+            net_cover_url TEXT,
+            net_description TEXT,
+            net_release TEXT,
+            net_rate_average REAL,
+            net_rate_count INTEGER,
+            source TEXT NOT NULL,
+            fetched_at INTEGER NOT NULL,
+            no_result INTEGER NOT NULL DEFAULT 0
+          )
+        ''');
+        // 播放历史（M7，断点续播）。
+        await db.execute('''
+          CREATE TABLE play_history (
+            track_key TEXT PRIMARY KEY,
+            node_id INTEGER,
+            work_id INTEGER,
+            track_title TEXT NOT NULL,
+            work_title TEXT NOT NULL,
+            cover_path TEXT,
+            artwork_url TEXT,
+            position_ms INTEGER NOT NULL,
+            duration_ms INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          )
+        ''');
+        await db.execute(
+            'CREATE INDEX idx_history_updated ON play_history(updated_at DESC)');
       },
     );
     return LocalLibraryDatabase._(db);
@@ -228,6 +309,122 @@ class LocalLibraryDatabase {
       subtitlePath: row['subtitle_path'] as String?,
     );
   }
+
+  // ---- NetMeta 缓存（M11） ----
+
+  Future<NetMeta?> queryNetMeta(String rjCode) async {
+    final rows = await _db.query('net_meta',
+        where: 'rj_code = ?', whereArgs: [rjCode], limit: 1);
+    if (rows.isEmpty) return null;
+    return _netMetaFromRow(rows.first);
+  }
+
+  Future<void> upsertNetMeta(NetMeta meta) async {
+    await _db.insert(
+        'net_meta',
+        {
+          'rj_code': meta.rjCode,
+          'work_id': meta.workId,
+          'net_title': meta.netTitle,
+          'net_title_trans': meta.netTitleTrans,
+          'net_circle': meta.netCircle,
+          'net_vas': meta.netVas.join('\u0001'),
+          'net_tags': meta.netTags.join('\u0001'),
+          'net_cover_url': meta.netCoverUrl,
+          'net_description': meta.netDescription,
+          'net_release': meta.netRelease?.toIso8601String(),
+          'net_rate_average': meta.netRateAverage,
+          'net_rate_count': meta.netRateCount,
+          'source': meta.source,
+          'fetched_at': meta.fetchedAt.millisecondsSinceEpoch,
+          'no_result': meta.noResult ? 1 : 0,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> clearNetMeta() => _db.delete('net_meta');
+
+  NetMeta _netMetaFromRow(Map<String, Object?> row) {
+    return NetMeta(
+      rjCode: row['rj_code'] as String,
+      workId: row['work_id'] as int?,
+      netTitle: row['net_title'] as String?,
+      netTitleTrans: row['net_title_trans'] as String?,
+      netCircle: row['net_circle'] as String?,
+      netVas: ((row['net_vas'] as String?) ?? '')
+          .split('\u0001')
+          .where((s) => s.isNotEmpty)
+          .toList(),
+      netTags: ((row['net_tags'] as String?) ?? '')
+          .split('\u0001')
+          .where((s) => s.isNotEmpty)
+          .toList(),
+      netCoverUrl: row['net_cover_url'] as String?,
+      netDescription: row['net_description'] as String?,
+      netRelease: DateTime.tryParse((row['net_release'] as String?) ?? ''),
+      netRateAverage: row['net_rate_average'] as double?,
+      netRateCount: row['net_rate_count'] as int?,
+      source: row['source'] as String? ?? 'asmr_one',
+      fetchedAt:
+          DateTime.fromMillisecondsSinceEpoch(row['fetched_at'] as int),
+      noResult: (row['no_result'] as int) == 1,
+    );
+  }
+
+  // ---- 播放历史（M7，断点续播） ----
+
+  Future<void> upsertHistory(HistoryEntry entry) async {
+    // node → work 联查补全 workId。
+    int? workId = entry.workId;
+    if (workId == null && entry.nodeId != null) {
+      final rows = await _db.query('file_nodes',
+          columns: ['work_id'],
+          where: 'id = ?',
+          whereArgs: [entry.nodeId],
+          limit: 1);
+      workId = rows.isEmpty ? null : rows.first['work_id'] as int;
+    }
+    await _db.insert(
+        'play_history',
+        {
+          'track_key': entry.trackKey,
+          'node_id': entry.nodeId,
+          'work_id': workId,
+          'track_title': entry.trackTitle,
+          'work_title': entry.workTitle,
+          'cover_path': entry.coverPath,
+          'artwork_url': entry.artworkUrl,
+          'position_ms': entry.positionMs,
+          'duration_ms': entry.durationMs,
+          'updated_at': entry.updatedAt.millisecondsSinceEpoch,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<HistoryEntry>> queryHistory({int limit = 100}) async {
+    final rows = await _db.query('play_history',
+        orderBy: 'updated_at DESC', limit: limit);
+    return rows
+        .map((row) => HistoryEntry(
+              trackKey: row['track_key'] as String,
+              nodeId: row['node_id'] as int?,
+              workId: row['work_id'] as int?,
+              trackTitle: row['track_title'] as String,
+              workTitle: row['work_title'] as String,
+              coverPath: row['cover_path'] as String?,
+              artworkUrl: row['artwork_url'] as String?,
+              positionMs: row['position_ms'] as int,
+              durationMs: row['duration_ms'] as int,
+              updatedAt: DateTime.fromMillisecondsSinceEpoch(
+                  row['updated_at'] as int),
+            ))
+        .toList();
+  }
+
+  Future<void> deleteHistory(String trackKey) =>
+      _db.delete('play_history', where: 'track_key = ?', whereArgs: [trackKey]);
+
+  Future<void> clearHistory() => _db.delete('play_history');
 
   Future<void> close() => _db.close();
 }

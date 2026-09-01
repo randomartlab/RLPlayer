@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/net_meta.dart';
 import '../models/work.dart';
+import '../services/net_meta_service.dart';
 import '../providers/audio_provider.dart';
 import '../providers/library_provider.dart';
 import '../utils/playback_helpers.dart';
@@ -26,11 +28,14 @@ class WorkDetailScreen extends StatefulWidget {
 class _WorkDetailScreenState extends State<WorkDetailScreen> {
   List<FileNode> _nodes = const [];
   bool _fileTreeExpanded = true;
+  NetMeta? _netMeta;
+  bool _netMetaLoading = false;
 
   @override
   void initState() {
     super.initState();
     _loadNodes();
+    _loadNetMeta();
   }
 
   Future<void> _loadNodes() async {
@@ -38,6 +43,23 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     final nodes = await library.nodesOf(widget.work);
     if (mounted) {
       setState(() => _nodes = nodes);
+    }
+  }
+
+  /// M11 网络参考信息（PRD §5.5：本地信息优先，网络参考只补充显示在下方独立区块）。
+  Future<void> _loadNetMeta({bool forceRefresh = false}) async {
+    final rjCode = widget.work.rjCode;
+    if (rjCode == null) return; // 未识别 RJ 的作品无参考信息。
+    setState(() => _netMetaLoading = true);
+    try {
+      final meta = await context
+          .read<NetMetaService>()
+          .getMeta(rjCode, forceRefresh: forceRefresh);
+      if (mounted) setState(() => _netMeta = meta);
+    } catch (_) {
+      // 网络参考 best-effort：失败静默不显示（PRD 决策 4）。
+    } finally {
+      if (mounted) setState(() => _netMetaLoading = false);
     }
   }
 
@@ -187,6 +209,82 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
               onTrackTap: (index, node) => unawaited(_playFrom(index)),
             ),
 
+          // ---- 网络参考信息（M11，PRD §5.5 ④–⑨：独立区块，辅助样式）----
+          if (_netMetaLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: UiSpacing.medium),
+              child: Center(
+                child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+            )
+          else if (_netMeta != null && !_netMeta!.noResult) ...[
+            const SizedBox(height: UiSpacing.small),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: UiSpacing.small),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text('网络参考信息',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontSize: 12)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh, size: 18),
+                    tooltip: '刷新参考信息',
+                    onPressed: () => _loadNetMeta(forceRefresh: true),
+                  ),
+                ],
+              ),
+            ),
+            if (_netMeta!.netTitle != null &&
+                _netMeta!.netTitle != widget.work.title)
+              _RefLine(label: _netMeta!.netTitle!),
+            if (_netMeta!.netCircle != null &&
+                _netMeta!.netCircle != widget.work.circleName)
+              _RefLine(label: '社团：${_netMeta!.netCircle!}'),
+            if (_netMeta!.netVas.isNotEmpty)
+              _RefLine(label: 'CV：${_netMeta!.netVas.join(' / ')}'),
+            if (_netMeta!.netRelease != null)
+              _RefLine(
+                  label: '发行：${_netMeta!.netRelease!.year}-${_netMeta!.netRelease!.month.toString().padLeft(2, '0')}-${_netMeta!.netRelease!.day.toString().padLeft(2, '0')}'),
+            if (_netMeta!.netRateAverage != null)
+              _RefLine(
+                  label: '评分：★${_netMeta!.netRateAverage!.toStringAsFixed(1)}（${_netMeta!.netRateCount ?? 0} 评价）'),
+            if (_netMeta!.netTags.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: UiSpacing.xSmall),
+                child: Wrap(
+                  spacing: UiSpacing.xSmall,
+                  runSpacing: UiSpacing.xSmall,
+                  children: [
+                    for (final tag in _netMeta!.netTags.take(12))
+                      Chip(
+                        label: Text(tag, style: const TextStyle(fontSize: 11)),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize:
+                            MaterialTapTargetSize.shrinkWrap,
+                      ),
+                  ],
+                ),
+              ),
+            if (_netMeta!.netDescription != null &&
+                _netMeta!.netDescription!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: UiSpacing.small),
+                child: Text(
+                  _netMeta!.netDescription!,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  maxLines: 6,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+
           const SizedBox(height: UiSpacing.large),
 
           // ⑪ 推荐位：横向滚动卡片列，高 190dp，卡片宽 120dp
@@ -304,6 +402,29 @@ class _RelatedCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+
+/// 参考区信息行（辅助样式：12sp 次级色，PRD §5.1 信息分层总则）。
+class _RefLine extends StatelessWidget {
+  const _RefLine({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Text(
+        label,
+        style: UiTextStyles.supporting.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }

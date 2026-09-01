@@ -5,6 +5,7 @@ import '../providers/library_provider.dart';
 import '../utils/ui_tokens.dart';
 import '../widgets/enhanced_work_card.dart';
 import 'downloads_screen.dart';
+import 'history_tab.dart';
 import 'work_detail_screen.dart';
 
 /// Tab3 我的页（M2：本地库 + 下载管理；历史/播放列表/字幕库 M4 补齐）。
@@ -18,15 +19,16 @@ class MyScreen extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: Text('我的', style: UiTextStyles.pageTitle),
           bottom: const TabBar(
             tabs: [
               Tab(text: '本地库'),
+              Tab(text: '历史'),
               Tab(text: '下载管理'),
-              // 历史 / 播放列表 / 字幕库（M4 里程碑）。
+              // 播放列表 / 字幕库（M5 里程碑）。
             ],
           ),
         ),
@@ -59,6 +61,7 @@ class MyScreen extends StatelessWidget {
                       onTap: () => _openDetail(context, works[index]),
                     ),
                   ),
+            const HistoryTab(),
             const DownloadsScreen(),
           ],
         ),

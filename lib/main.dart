@@ -15,6 +15,8 @@ import 'src/providers/ui_settings_provider.dart';
 import 'src/screens/main_screen.dart';
 import 'src/services/audio_player_service.dart';
 import 'src/services/download_service.dart';
+import 'src/services/history_service.dart';
+import 'src/services/net_meta_service.dart';
 import 'src/utils/theme.dart';
 
 /// KikoLocal —— KikoFlu 像素级复刻的本地播放安卓音乐播放器。
@@ -71,6 +73,20 @@ class KikoLocalApp extends StatelessWidget {
                 update: (context, mirror, library, online) => online!,
               ),
               // 下载即入库：下载目录跟随扫描根目录，队列空闲触发重扫（PRD §5.12）。
+              // M11 网络元数据（依赖镜像 + 本地库 DB；DB 异步就绪后重建）。
+              ProxyProvider2<MirrorProvider, LibraryProvider,
+                  NetMetaService>(
+                create: (context) => NetMetaService(
+                  mirror: context.read<MirrorProvider>(),
+                  db: context.read<LibraryProvider>().database,
+                ),
+                update: (context, mirror, library, previous) =>
+                    library.database != null &&
+                            previous?.db != library.database
+                        ? NetMetaService(
+                            mirror: mirror, db: library.database)
+                        : previous!,
+              ),
               ChangeNotifierProxyProvider<LibraryProvider, DownloadProvider>(
                 create: (context) {
                   final library = context.read<LibraryProvider>();
@@ -112,7 +128,7 @@ class KikoLocalApp extends StatelessWidget {
                     settings.colorSchemeType,
                   ),
                   themeMode: settings.toThemeMode(),
-                  home: const MainScreen(),
+                  home: const _HistoryRecorder(child: MainScreen()),
                 );
               },
             ),
@@ -121,4 +137,60 @@ class KikoLocalApp extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// 播放历史记录器：订阅播放位置流（≤5s 节流）与暂停/切歌事件写入断点。
+class _HistoryRecorder extends StatefulWidget {
+  const _HistoryRecorder({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_HistoryRecorder> createState() => _HistoryRecorderState();
+}
+
+class _HistoryRecorderState extends State<_HistoryRecorder> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _wire());
+  }
+
+  void _wire() {
+    if (!mounted) return;
+    final audio = context.read<AudioPlayerProvider>();
+    final library = context.read<LibraryProvider>();
+    HistoryService? service;
+    void ensureService() {
+      service ??= library.database != null
+          ? HistoryService(library.database)
+          : null;
+    }
+
+
+    // 位置流周期记录（service 内部 5s 节流）。
+    audio.positionStream.listen((position) {
+      ensureService();
+      final track = audio.currentTrack;
+      if (track == null) return;
+      service?.record(
+          track, position.inMilliseconds, audio.duration?.inMilliseconds ?? 0);
+    });
+    // 暂停时立即落一次断点（突破节流，直接写）。
+    audio.playerStateStream.listen((state) {
+      ensureService();
+      final track = audio.currentTrack;
+      if (track == null || state.playing) return;
+      ensureService();
+      final svc = service;
+      if (svc == null) return;
+      svc.lastWriteAt = DateTime.fromMillisecondsSinceEpoch(0);
+      svc.record(track, audio.handler.player.position.inMilliseconds,
+          audio.duration?.inMilliseconds ?? 0);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

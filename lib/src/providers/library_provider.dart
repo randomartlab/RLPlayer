@@ -20,6 +20,9 @@ class LibraryProvider extends ChangeNotifier {
 
   LocalLibraryDatabase? _db;
 
+  /// 供 M11 NetMeta 等服务复用（M2 单库设计）。
+  LocalLibraryDatabase? get database => _db;
+
   List<String> _roots = [];
   List<Work> _works = [];
 

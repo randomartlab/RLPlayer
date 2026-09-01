@@ -199,3 +199,25 @@ flutter test                  # 中文路径下正常
   报 "Tried to use Provider with a subtype of Listenable"）
 - 模拟器 DNS 走宿主机代理 fake-ip（198.18.x.x），asmr.one 可达依赖宿主代理开启
 - MuMu 旋转后 input tap 坐标系可能错乱，需重启虚拟机恢复
+
+## M4 已实现内容（2026-09-01 晚）
+
+**M11 网络元数据补全**
+- `models/net_meta.dart` + DB `net_meta` 表（v2 迁移；与 works 完全隔离可清空再生）
+- `services/net_meta_service.dart`：RJ → asmr.one（当前镜像）→ 404/超时标记 noResult
+  静默不显示（DLsite 页面解析后续里程碑补齐，决策 4 的兜底位留好）
+- 本地详情页网络参考区：标题/CV/社团/发行/评分/标签/简介（12sp 辅助样式，
+  本地信息优先），手动刷新入口；MuMu 验证：编造 RJ 号 404 → noResult 正确
+
+**M6 搜索（首版）**
+- 关键词模糊匹配（作品标题/社团/RJ 号/音轨名）、数字自动补 RJ 前缀、
+  300ms 防抖、胶囊搜索栏（UI 规范 §5.3）、完全离线零网络
+
+**M7 播放历史（首版）**
+- DB `play_history` 表（v3 迁移）+ `services/history_service.dart`
+- 播放位置 ≤5s 节流写入 + 暂停立即落盘（MuMu 验证：断点 36.3s/40s 写入正确）
+- 我的页「历史」Tab：封面/进度条/相对时间、点击断点续播（重建队列+seek）、
+  左滑删除、一键清空
+
+**待办（M5/后续）**：DLsite 页面解析兜底、FTS 全文索引、播放列表管理、
+字幕库、搜索历史记录、偏好设置页分组完善

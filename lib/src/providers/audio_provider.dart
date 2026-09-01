@@ -39,6 +39,9 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   AudioTrack? get currentTrack => _currentTrack;
 
+  /// 当前音轨时长（同步读，历史记录用）。
+  Duration? get duration => handler.player.duration;
+
   bool get isPlaying => _isPlaying;
 
   bool get miniPlayerVisible => _miniPlayerVisible;

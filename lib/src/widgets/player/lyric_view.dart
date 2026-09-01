@@ -40,14 +40,10 @@ class LyricController extends ChangeNotifier {
 
     final index = lyrics.lineIndexAt(t);
     if (index != activeIndex) {
-      debugPrint('[Lyric] locateTo ${t.inSeconds}s → 行 $index '
-          '「${lines(index).text}」');
       activeIndex = index;
       notifyListeners();
     }
   }
-
-  LyricLine lines(int index) => _lyrics!.lines[index];
 }
 
 /// 歌词视图（PRD §5.6.4 像素级规格）。
@@ -121,7 +117,11 @@ class _LyricViewState extends State<LyricView> {
   GlobalKey _keyFor(int index) =>
       _itemKeys.putIfAbsent(index, () => GlobalKey(debugLabel: 'lyric_$index'));
 
-  /// 300ms 平滑滚动使目标行居中；连续触发时新动画取消旧动画（不排队）。
+  /// 滚动使目标行居中（300ms 平滑）；连续触发时新动画覆盖旧动画（不排队）。
+  ///
+  /// 实现说明：不用 Scrollable.ensureVisible（部分模拟器上调用后无效果，
+  /// 实测 offset 不变）；改为 localToGlobal 精确计算目标行在内容坐标中的
+  /// 位置，直接 animateTo —— 行为可控且对所有行（含离屏）有效。
   void _scrollToActiveLine() {
     final controller = widget.controller;
     final index = controller.activeIndex;
@@ -130,18 +130,33 @@ class _LyricViewState extends State<LyricView> {
     final key = _keyFor(index);
     final context = key.currentContext;
     if (context == null) {
-      // 首次渲染尚未布局：下一帧再滚动。
+      // 首帧尚未布局：下一帧再滚动。
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _scrollToActiveLine();
       });
       return;
     }
 
-    Scrollable.ensureVisible(
-      context,
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) return;
+
+    final scrollRenderObject =
+        _scrollController.position.context.storageContext.findRenderObject();
+    if (scrollRenderObject is! RenderBox) return;
+
+    // 行在滚动内容坐标系中的位置（含当前滚动偏移）。
+    final lineY = renderObject
+        .localToGlobal(Offset.zero, ancestor: scrollRenderObject)
+        .dy;
+    // 目标：行中心对齐视口中心。
+    final position = _scrollController.position;
+    final target = (position.pixels + lineY - position.viewportDimension / 2)
+        .clamp(position.minScrollExtent, position.maxScrollExtent);
+
+    _scrollController.animateTo(
+      target.toDouble(),
       duration: UiMotion.lyricScroll,
       curve: UiMotion.lyricScrollCurve,
-      alignment: 0.5,
     );
   }
 
@@ -163,16 +178,20 @@ class _LyricViewState extends State<LyricView> {
       );
     }
 
-    // 全量构建（非 builder）：歌词行通常 <300，一次性构建保证任意行的
-    // key.currentContext 存在 —— ensureVisible 对离屏行也能直接滚动定位
-    // （builder 惰性构建导致 seek 跳远时目标行 context 为 null、永远滚不进屏）。
-    return ListView(
+    // 真正的全量构建：SingleChildScrollView + Column。
+    // 注意 ListView(children:) 仍是 sliver 惰性挂载（离屏行 context 为 null，
+    // ensureVisible 滚不过去）；Column 才会构建全部行，任意行可定位。
+    return SingleChildScrollView(
       controller: _scrollController,
-      padding: const EdgeInsets.symmetric(vertical: 96),
-      children: [
-        for (var index = 0; index < lyrics.lines.length; index++)
-          _buildLine(context, controller, lyrics, index),
-      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 96),
+        child: Column(
+          children: [
+            for (var index = 0; index < lyrics.lines.length; index++)
+              _buildLine(context, controller, lyrics, index),
+          ],
+        ),
+      ),
     );
   }
 

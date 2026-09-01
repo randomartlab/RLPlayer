@@ -554,12 +554,7 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
   @override
   void initState() {
     super.initState();
-    // 顶层目录默认展开。
-    if (widget.depth == 0) {
-      for (final node in widget.nodes) {
-        if (node.isFolder) _expanded.add(node.title);
-      }
-    }
+    // 目录默认收起（与本地文件树一致，用户约定）。
   }
 
   @override

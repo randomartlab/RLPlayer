@@ -27,7 +27,6 @@ class WorkDetailScreen extends StatefulWidget {
 
 class _WorkDetailScreenState extends State<WorkDetailScreen> {
   List<FileNode> _nodes = const [];
-  bool _fileTreeExpanded = true;
   NetMeta? _netMeta;
   bool _netMetaLoading = false;
 
@@ -212,24 +211,12 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
 
           const SizedBox(height: UiSpacing.large),
 
-          // ⑩ 文件树（可折叠）。
-          _SectionHeader(
-            title: '文件',
-            trailing: IconButton(
-              icon: Icon(
-                _fileTreeExpanded
-                    ? Icons.expand_less
-                    : Icons.expand_more,
-              ),
-              onPressed: () =>
-                  setState(() => _fileTreeExpanded = !_fileTreeExpanded),
-            ),
+          // ⑩ 文件树（恒展开；目录默认收起，点按展开）。
+          _SectionHeader(title: '文件'),
+          FileTreeView(
+            nodes: _nodes,
+            onTrackTap: (index, node) => unawaited(_playFrom(index)),
           ),
-          if (_fileTreeExpanded)
-            FileTreeView(
-              nodes: _nodes,
-              onTrackTap: (index, node) => unawaited(_playFrom(index)),
-            ),
 
           // ---- 网络参考信息（M11，PRD §5.5 ④–⑨：独立区块，辅助样式）----
           if (_netMetaLoading)
@@ -364,10 +351,9 @@ class _InfoRow extends StatelessWidget {
 }
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title, this.trailing});
+  const _SectionHeader({required this.title});
 
   final String title;
-  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -387,7 +373,6 @@ class _SectionHeader extends StatelessWidget {
             ),
           ),
         ),
-        ?trailing,
       ],
     );
   }

@@ -163,17 +163,30 @@ class _LyricViewState extends State<LyricView> {
       );
     }
 
-    final scheme = Theme.of(context).colorScheme;
-
-    return ListView.builder(
+    // 全量构建（非 builder）：歌词行通常 <300，一次性构建保证任意行的
+    // key.currentContext 存在 —— ensureVisible 对离屏行也能直接滚动定位
+    // （builder 惰性构建导致 seek 跳远时目标行 context 为 null、永远滚不进屏）。
+    return ListView(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(vertical: 96),
-      itemCount: lyrics.lines.length,
-      itemBuilder: (context, index) {
-        final line = lyrics.lines[index];
-        final isActive = index == controller.activeIndex;
+      children: [
+        for (var index = 0; index < lyrics.lines.length; index++)
+          _buildLine(context, controller, lyrics, index),
+      ],
+    );
+  }
 
-        return GestureDetector(
+  Widget _buildLine(
+    BuildContext context,
+    LyricController controller,
+    Lyrics lyrics,
+    int index,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final line = lyrics.lines[index];
+    final isActive = index == controller.activeIndex;
+
+      return GestureDetector(
           // 点击歌词行 → 立即 seek 到该行（用户反馈：点击歌词跳转进度）。
           onTap: () {
             final callback = widget.onSeekTo;
@@ -210,9 +223,7 @@ class _LyricViewState extends State<LyricView> {
             ),
           ),
           ),
-        );
-      },
-    );
+      );
   }
 }
 

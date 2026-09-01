@@ -457,19 +457,22 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
               onPressed: audio.skipToPrevious,
             ),
             SizedBox(width: UiSpacing.large),
-            // 播放主按钮：竖屏 72dp 圆形 primary 背景（横屏 64dp）。
+            // 播放主按钮：纯 Material 圆（实机反馈 FAB 呈现水印痕迹，
+            // 改用无阴影无高亮层的自定义圆形按钮）。
             SizedBox(
               width: playButtonSize,
               height: playButtonSize,
-              child: FloatingActionButton(
-                backgroundColor: scheme.primary,
-                foregroundColor: scheme.onPrimary,
-                elevation: 0,
-                onPressed: () =>
-                    audio.isPlaying ? audio.pause() : audio.play(),
-                child: Icon(
-                  audio.isPlaying ? Icons.pause : Icons.play_arrow,
-                  size: 32,
+              child: Material(
+                color: scheme.primary,
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => audio.isPlaying ? audio.pause() : audio.play(),
+                  child: Icon(
+                    audio.isPlaying ? Icons.pause : Icons.play_arrow,
+                    size: 32,
+                    color: scheme.onPrimary,
+                  ),
                 ),
               ),
             ),

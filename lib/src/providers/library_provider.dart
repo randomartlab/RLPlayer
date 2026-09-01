@@ -103,6 +103,13 @@ class LibraryProvider extends ChangeNotifier {
 
   LocalLibraryScanner? _activeScanner;
 
+  /// 最近一次扫描的统计（供 UI 反馈"无添加"原因）。
+  int _lastScannedWorks = 0;
+  String? _lastScanError;
+
+  int get lastScannedWorks => _lastScannedWorks;
+  String? get lastScanError => _lastScanError;
+
   Future<void> rescan() async {
     if (_scanning) return;
     final db = _db;
@@ -111,6 +118,8 @@ class LibraryProvider extends ChangeNotifier {
     _scanning = true;
     _scanningPath = null;
     _scanningFound = 0;
+    _lastScannedWorks = 0;
+    _lastScanError = null;
     notifyListeners();
 
     try {
@@ -130,6 +139,10 @@ class LibraryProvider extends ChangeNotifier {
       await scanner.cleanOrphanEmbeddedCovers();
       await db.replaceAll(scanned);
       await _reloadWorks();
+      _lastScannedWorks = scanned.length;
+    } catch (e) {
+      _lastScanError = e.toString();
+      rethrow;
     } finally {
       _activeScanner = null;
       _scanning = false;

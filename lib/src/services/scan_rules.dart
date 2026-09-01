@@ -10,9 +10,13 @@ import 'package:charset/charset.dart' as charset;
 /// RJ 号正则：RJ/BJ/VJ 前缀 + 6~8 位数字，不区分大小写（PRD 决策 5）。
 final RegExp rjPattern = RegExp(r'(RJ|BJ|VJ)(\d{6,8})', caseSensitive: false);
 
-/// 音频扩展名（PRD §5.9.2）。
+/// 音频扩展名（PRD §5.9.2 + 实机反馈 2026-09-01：扩展常见格式）。
 const Set<String> audioExtensions = {
   '.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus',
+  '.aac', // 无损/有损常见（实机反馈）。
+  '.wma',
+  '.aiff',
+  '.tak',
 };
 
 /// 歌词 / 字幕扩展名。

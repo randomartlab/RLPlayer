@@ -51,6 +51,14 @@ class MirrorProvider extends ChangeNotifier {
   /// 内置默认实例（PRD：asmr.one）。
   static const String defaultHost = 'api.asmr.one';
 
+  /// 内置镜像全集（用户需求 2026-09-01：预置 asmr-100/200/300）。
+  static const List<MirrorInstance> builtinMirrors = [
+    MirrorInstance(host: 'api.asmr.one', label: 'asmr.one（默认）'),
+    MirrorInstance(host: 'asmr-100.one', label: 'asmr-100 镜像'),
+    MirrorInstance(host: 'asmr-200.one', label: 'asmr-200 镜像'),
+    MirrorInstance(host: 'asmr-300.one', label: 'asmr-300 镜像'),
+  ];
+
   final KikoeruApiService api = KikoeruApiService();
 
   List<MirrorInstance> _mirrors = [];
@@ -105,7 +113,14 @@ class MirrorProvider extends ChangeNotifier {
         .whereType<MirrorInstance>()
         .toList();
     if (_mirrors.isEmpty) {
-      _mirrors = [const MirrorInstance(host: defaultHost, label: 'asmr.one（默认）')];
+      _mirrors = builtinMirrors;
+    } else {
+      // 旧数据补齐内置镜像（去重）。
+      for (final builtin in builtinMirrors) {
+        if (!_mirrors.any((m) => m.host == builtin.host)) {
+          _mirrors.add(builtin);
+        }
+      }
     }
 
     _autoSelect = prefs.getBool(_autoSelectKey) ?? true;

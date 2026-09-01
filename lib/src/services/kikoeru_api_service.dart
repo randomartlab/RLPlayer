@@ -108,11 +108,21 @@ class KikoeruApiService {
     final works = ((data['works'] ?? []) as List)
         .map((w) => OnlineWork.fromJson(w as Map<String, dynamic>))
         .toList();
+    // asmr.one 实测返回 {currentPage, pageSize, totalCount}（无 totalPages），
+    // 用 totalCount/pageSize 推导；兼容直接返回 totalPages 的镜像。
+    final currentPage = (pagination['currentPage'] as num?)?.toInt() ?? page;
+    final totalCount =
+        (pagination['totalCount'] ?? pagination['totalItems'] as num?)
+                ?.toInt() ??
+            works.length;
+    final explicitTotalPages = (pagination['totalPages'] as num?)?.toInt();
+    final totalPages = explicitTotalPages ??
+        (pageSize > 0 ? (totalCount / pageSize).ceil() : 1);
     return OnlineWorksPage(
       works: works,
-      currentPage: (pagination['currentPage'] as num?)?.toInt() ?? page,
-      totalPages: (pagination['totalPages'] as num?)?.toInt() ?? 1,
-      totalItems: (pagination['totalItems'] as num?)?.toInt() ?? works.length,
+      currentPage: currentPage,
+      totalPages: totalPages,
+      totalItems: totalCount,
     );
   }
 

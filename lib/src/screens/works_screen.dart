@@ -140,6 +140,15 @@ class _WorksScreenState extends State<WorksScreen> {
   Widget _buildEmptyView() {
     final scheme = Theme.of(context).colorScheme;
     final library = context.watch<LibraryProvider>();
+    // 扫描完成但零作品：给出诊断提示（不再静默，实机反馈 2026-09-01）。
+    final scanInfo = library.lastScanError != null
+        ? '扫描出错：${library.lastScanError}'
+        : (library.roots.isNotEmpty && library.lastScannedWorks == 0)
+            ? '上次扫描完成但未发现作品。可能原因：\n'
+                '1. 文件夹内音频格式不支持（支持 mp3/m4a/flac/wav/ogg/opus/aac/wma）\n'
+                '2. 无存储访问权限（设置 → 应用 → 权限 → 允许所有文件访问）\n'
+                '3. 扫描根目录路径不正确'
+            : null;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(UiSpacing.xLarge),
@@ -156,6 +165,21 @@ class _WorksScreenState extends State<WorksScreen> {
                   .titleMedium
                   ?.copyWith(color: scheme.onSurfaceVariant),
             ),
+            if (scanInfo != null) ...[
+              const SizedBox(height: UiSpacing.medium),
+              Container(
+                padding: const EdgeInsets.all(UiSpacing.medium),
+                decoration: BoxDecoration(
+                  color: scheme.errorContainer.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(UiRadii.list),
+                ),
+                child: Text(
+                  scanInfo,
+                  style: UiTextStyles.supporting
+                      .copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ),
+            ],
             const SizedBox(height: UiSpacing.xSmall),
             Text(
               '到 设置 → 本地库 添加扫描根目录\n支持任意层级嵌套的 RJ 作品文件夹',

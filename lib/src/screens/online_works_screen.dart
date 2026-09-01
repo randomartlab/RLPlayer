@@ -383,10 +383,10 @@ class _MediumCard extends StatelessWidget with _OnlineCardBase {
             coverStack(context, work, aspectRatio: 4 / 3),
             const SizedBox(height: UiSpacing.xSmall),
             Text(work.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style:
-                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    height: 1.35)),
             if (work.circleName != null) ...[
               const SizedBox(height: 2),
               Text(work.circleName!,

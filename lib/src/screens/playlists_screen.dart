@@ -131,6 +131,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
   }
 
   Future<void> _confirmDelete(PlaylistInfo playlist) async {
+    final provider = context.read<PlaylistProvider>();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -147,7 +148,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
       ),
     );
     if (confirmed == true) {
-      await context.read<PlaylistProvider>().remove(playlist.id);
+      await provider.remove(playlist.id);
     }
   }
 }
@@ -218,8 +219,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 )
               : ReorderableListView.builder(
                   itemCount: _items.length,
-                  onReorder: (oldIndex, newIndex) async {
-                    if (newIndex > oldIndex) newIndex -= 1;
+                  onReorderItem: (oldIndex, newIndex) async {
                     final items = [..._items];
                     final item = items.removeAt(oldIndex);
                     items.insert(newIndex.clamp(0, items.length), item);
@@ -288,7 +288,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 width: 48,
                 height: 48,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
+                errorBuilder: (_, _, _) =>
                     Icon(Icons.album, color: scheme.onSurfaceVariant))
             : Icon(Icons.album, color: scheme.onSurfaceVariant),
       ),

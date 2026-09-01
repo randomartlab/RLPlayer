@@ -226,15 +226,15 @@ class _MediumCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: UiSpacing.xSmall),
-            // 标题：本地值（metadata.json > 文件夹名）。字号放大（用户反馈）。
+            // 标题：本地值（metadata.json > 文件夹名）。
+            // 完整显示（用户要求 2026-09-01：不限行数，masonry 高度自适应）。
             Text(
               work.title,
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
+                height: 1.35,
               ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
             ),
             // 社团名：本地有则显示；均无隐藏该行（不留空白）。
             if (work.circleName != null) ...[
@@ -374,14 +374,15 @@ class _ListCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 标题 15sp，两行省略（字号放大）。
+                  // 标题 15sp，三行省略（完整显示优先）。
                   Text(
                     work.title,
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
+                      height: 1.35,
                     ),
-                    maxLines: 2,
+                    maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 3),

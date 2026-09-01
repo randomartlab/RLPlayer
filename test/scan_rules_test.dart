@@ -116,6 +116,34 @@ void main() {
       expect(picked, '/work/cover.jpg');
     });
 
+    test('优先级 1：中文/日文封面命名（用户确认逻辑）', () {
+      final picked = pickLocalCover([
+        candidate('封面1.png', size: 100),
+        candidate('big_image.jpg', size: 99999),
+      ]);
+      expect(picked, '/work/封面1.png');
+
+      final picked2 = pickLocalCover([
+        candidate('表紙.jpg', size: 100),
+        candidate('big_image.jpg', size: 99999),
+      ]);
+      expect(picked2, '/work/表紙.jpg');
+
+      final picked3 = pickLocalCover([
+        candidate('カバー_02.png', size: 100),
+        candidate('big_image.jpg', size: 99999),
+      ]);
+      expect(picked3, '/work/カバー_02.png');
+    });
+
+    test('优先级 1：精确命名 > 包含命名', () {
+      final picked = pickLocalCover([
+        candidate('cover.jpg', size: 100),
+        candidate('my_cover_2.png', size: 99999),
+      ]);
+      expect(picked, '/work/cover.jpg');
+    });
+
     test('优先级 1 内：浅层优先', () {
       final picked = pickLocalCover([
         candidate('sub/cover.jpg', depth: 1),

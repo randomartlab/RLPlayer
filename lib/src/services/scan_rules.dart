@@ -30,8 +30,21 @@ const Set<String> metadataFileNames = {
   'work_info.json',
 };
 
-/// 封面优先命中的基础名（不含扩展名，不区分大小写，PRD §5.9.2 优先级 1）。
-const Set<String> coverBaseNames = {'cover', 'folder'};
+/// 封面优先命中的关键词（中英日，不区分大小写；PRD §5.9.2 优先级 1）。
+/// 用户确认（2026-09-01）：优先识别名字带「封面」或相关字样的图片。
+/// 匹配两级：基础名精确等于关键词 > 基础名包含关键词（如 封面1.png /
+/// cover_02.jpg / 表紙.jpg）。
+const Set<String> coverKeywords = {
+  // 英文（KikoFlu _coverBaseNames 全集）。
+  'cover', 'folder', 'front', 'main', 'poster', 'thumbnail',
+  // 中文。
+  '封面',
+  // 日文（音声作品常见命名）。
+  'カバー', '表紙', '表纸',
+};
+
+/// 兼容旧引用。
+const Set<String> coverBaseNames = coverKeywords;
 
 /// 小文件过滤阈值（PRD §5.9.2：体积 < 100KB 且时长 < 10s 默认过滤）。
 const int tinyAudioSizeLimit = 100 * 1024;
@@ -199,16 +212,28 @@ class CoverCandidate {
 String? pickLocalCover(List<CoverCandidate> candidates) {
   if (candidates.isEmpty) return null;
 
-  // 优先级 1：cover / folder 命名，浅层优先。
-  final named = candidates
-      .where((c) => coverBaseNames.contains(c.baseName))
+  // 优先级 1：命名含封面关键词（中英日，用户确认 2026-09-01）。
+  // 两级匹配：精确等于 > 名字包含关键词；各层级内浅层优先、取大。
+  final exact = candidates
+      .where((c) => coverKeywords.contains(c.baseName))
       .toList()
     ..sort((a, b) {
       final depth = a.depth.compareTo(b.depth);
       if (depth != 0) return depth;
       return a.sizeBytes.compareTo(b.sizeBytes);
     });
-  if (named.isNotEmpty) return named.last.absolutePath;
+  if (exact.isNotEmpty) return exact.last.absolutePath;
+
+  final contains = candidates
+      .where((c) => coverKeywords
+          .any((kw) => c.baseName.contains(kw)))
+      .toList()
+    ..sort((a, b) {
+      final depth = a.depth.compareTo(b.depth);
+      if (depth != 0) return depth;
+      return a.sizeBytes.compareTo(b.sizeBytes);
+    });
+  if (contains.isNotEmpty) return contains.last.absolutePath;
 
   // 优先级 2：与音频同名。
   final sameName = candidates.where((c) => c.sameNameAsAudio).toList()

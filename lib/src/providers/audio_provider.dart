@@ -111,7 +111,41 @@ class AudioPlayerProvider extends ChangeNotifier {
 
   Future<void> skipToPrevious() => handler.skipToPrevious();
 
-  // ---- M5：倍速 / 循环 / 睡眠定时 / 队列 ----
+  // ---- M5：倍速 / 循环 / 睡眠定时 / 队列 / 增益 ----
+
+  /// 音频增益（dB，−12~+12；dB→倍率映射 setVolume，PRD §5.6.3/§5.10）。
+  double _gainDb = 0;
+  double get gainDb => _gainDb;
+
+  /// 增益生效（dB → 线性倍率；正值由平台放大，ExoPlayer 支持音量 >1）。
+  Future<void> setGainDb(double db) async {
+    _gainDb = db.clamp(-12.0, 12.0);
+    final volume = _dbToVolume(_gainDb);
+    await handler.player.setVolume(volume);
+    notifyListeners();
+  }
+
+  static double _dbToVolume(double db) {
+    // 0dB → 1.0；−12dB → 0.25；+12dB → 4.0（平台可能削波，实验性支持）。
+    final v = _pow10(db / 20);
+    return v.clamp(0.0, 4.0);
+  }
+
+  static double _pow10(double x) {
+    // 10^x 简易实现（避免额外依赖 math 已可用——math 未导入，用循环近似）。
+    return (x == 0) ? 1.0 : _exp(x * 2.302585092994046);
+  }
+
+  static double _exp(double x) {
+    // e^x 泰勒近似（范围小，精度足够音量用途）。
+    var sum = 1.0;
+    var term = 1.0;
+    for (var i = 1; i <= 12; i++) {
+      term *= x / i;
+      sum += term;
+    }
+    return sum;
+  }
 
   double get speed => handler.player.speed;
 

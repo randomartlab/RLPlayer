@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/work.dart';
+import '../models/net_meta.dart';
 import '../providers/library_provider.dart';
+import '../services/local_library_database.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/ui_tokens.dart';
 import '../widgets/enhanced_work_card.dart';
 import 'work_detail_screen.dart';
@@ -30,6 +33,49 @@ class _SearchScreenState extends State<SearchScreen> {
   String _query = '';
   List<Work> _results = const [];
   bool _searched = false;
+
+  /// 搜索条件类型（PRD §5.7：关键词/RJ号/标签/社团/声优）。
+  int _conditionType = 0;
+  static const _conditions = [
+    ('关键词', Icons.text_fields),
+    ('RJ 号', Icons.tag),
+    ('标签', Icons.label_outline),
+    ('社团', Icons.group_outlined),
+    ('声优', Icons.mic_outlined),
+  ];
+
+  /// 搜索历史（最近 10 条，PRD 验收要求）。
+  List<String> _history = const [];
+  static const String _historyKey = 'search_history';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() => _history = prefs.getStringList(_historyKey) ?? []);
+    }
+  }
+
+  Future<void> _saveHistory(String query) async {
+    final prefs = await SharedPreferences.getInstance();
+    final updated = [
+      query,
+      ..._history.where((h) => h != query),
+    ].take(10).toList();
+    setState(() => _history = updated);
+    await prefs.setStringList(_historyKey, updated);
+  }
+
+  Future<void> _clearHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _history = []);
+    await prefs.setStringList(_historyKey, []);
+  }
 
   @override
   void dispose() {
@@ -57,34 +103,52 @@ class _SearchScreenState extends State<SearchScreen> {
       return;
     }
     final library = context.read<LibraryProvider>();
+    final db = library.database;
     final query = _query.toLowerCase();
-
-    // RJ 号：输入纯数字时补全前缀。
-    final rjQuery = RegExp(r'^\d{5,8}$').hasMatch(query)
-        ? 'rj$query'
-        : query.toLowerCase();
 
     final results = <Work>[];
     for (final work in library.works) {
-      if (work.title.toLowerCase().contains(query) ||
-          work.rjCode?.toLowerCase() == rjQuery ||
-          work.rjCode?.toLowerCase().contains(query) == true ||
-          (work.circleName?.toLowerCase().contains(query) ?? false)) {
-        results.add(work);
-        continue;
+      var hit = false;
+      switch (_conditionType) {
+        case 1: // RJ 号（纯数字自动补前缀）。
+          final rj =
+              RegExp(r'^\d{5,8}$').hasMatch(query) ? 'rj$query' : query;
+          hit = work.rjCode?.toLowerCase() == rj ||
+              work.rjCode?.toLowerCase().contains(query) == true;
+        case 2: // 标签：works.tags + NetMeta.netTags。
+          hit = work.tags.any((t) => t.toLowerCase().contains(query));
+          hit = hit ||
+              await _netMetaMatch(db, work,
+                  (m) => m.netTags.any((t) => t.toLowerCase().contains(query)));
+        case 3: // 社团。
+          hit = work.circleName?.toLowerCase().contains(query) ?? false;
+          hit = hit ||
+              await _netMetaMatch(db, work,
+                  (m) => m.netCircle?.toLowerCase().contains(query) ?? false);
+        case 4: // 声优。
+          hit = work.vasNames
+              .any((v) => v.toLowerCase().contains(query));
+          hit = hit ||
+              await _netMetaMatch(db, work,
+                  (m) => m.netVas.any((v) => v.toLowerCase().contains(query)));
+        default: // 关键词：标题/社团 + 音轨名。
+          hit = work.title.toLowerCase().contains(query) ||
+              (work.circleName?.toLowerCase().contains(query) ?? false);
+          if (!hit) {
+            final nodes = await library.nodesOf(work);
+            hit = nodes.any((node) =>
+                !node.isDirectory &&
+                node.displayName.toLowerCase().contains(query));
+          }
       }
-      // 音轨名匹配（命中则该作品入结果）。
-      final nodes = await library.nodesOf(work);
-      if (nodes.any((node) =>
-          !node.isDirectory && node.displayName.toLowerCase().contains(query))) {
-        results.add(work);
-      }
+      if (hit) results.add(work);
     }
     if (mounted) {
       setState(() {
         _results = results;
         _searched = true;
       });
+      _saveHistory(_query);
     }
   }
 
@@ -98,6 +162,33 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
       body: Column(
         children: [
+          // 条件类型 chips（PRD §5.7 五条件）。
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+                UiSpacing.medium, UiSpacing.small, UiSpacing.medium, 0),
+            child: SizedBox(
+              height: 40,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (var i = 0; i < _conditions.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(right: UiSpacing.small),
+                      child: FilterChip(
+                        avatar: Icon(_conditions[i].$2, size: 16),
+                        label: Text(_conditions[i].$1),
+                        selected: _conditionType == i,
+                        onSelected: (_) {
+                          setState(() => _conditionType = i);
+                          _search();
+                        },
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
           // 胶囊搜索栏：48dp 高 StadiumBorder（UI 规范 §5.3）。
           Padding(
             padding: const EdgeInsets.fromLTRB(
@@ -149,9 +240,55 @@ class _SearchScreenState extends State<SearchScreen> {
                               ?.copyWith(color: scheme.onSurfaceVariant),
                         ),
                       )
-                    : _buildIdle(context),
+                    : Column(
+                        children: [
+                          _buildHistory(context),
+                          Expanded(child: _buildIdle(context)),
+                        ],
+                      ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildHistory(BuildContext context) {
+    if (_history.isEmpty) return const SizedBox.shrink();
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: UiSpacing.large),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                    child: Text('搜索历史',
+                        style: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w500))),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  onPressed: _clearHistory,
+                  tooltip: '清空历史',
+                ),
+              ],
+            ),
+            Wrap(
+              spacing: UiSpacing.small,
+              children: [
+                for (final item in _history)
+                  ActionChip(
+                    label: Text(item),
+                    onPressed: () {
+                      _controller.text = item;
+                      _onChanged(item);
+                    },
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -180,6 +317,13 @@ class _SearchScreenState extends State<SearchScreen> {
         ],
       ),
     );
+  }
+
+  Future<bool> _netMetaMatch(
+      LocalLibraryDatabase? db, Work work, bool Function(NetMeta) test) async {
+    if (db == null || work.rjCode == null) return false;
+    final meta = await db.queryNetMeta(work.rjCode!);
+    return meta != null && !meta.noResult && test(meta);
   }
 
   void _openDetail(BuildContext context, Work work) {

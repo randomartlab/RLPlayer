@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/library_provider.dart';
+import '../providers/audio_provider.dart';
 import '../providers/mirror_provider.dart';
 import '../providers/theme_mode.dart';
 import '../providers/theme_provider.dart';
@@ -23,6 +24,7 @@ class SettingsScreen extends StatelessWidget {
     final uiSettings = context.watch<UiSettingsProvider>();
     final library = context.watch<LibraryProvider>();
     final mirror = context.watch<MirrorProvider>();
+    final audio = context.watch<AudioPlayerProvider>();
 
     return Scaffold(
       appBar: AppBar(
@@ -47,6 +49,30 @@ class SettingsScreen extends StatelessWidget {
                   MaterialPageRoute<void>(
                     builder: (context) => const MirrorManagementScreen(),
                   ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: UiSpacing.medium),
+          _SettingsCard(
+            title: '偏好',
+            children: [
+              ListTile(
+                leading: _LeadingIcon(
+                    icon: Icons.graphic_eq_outlined, context: context),
+                title: const Text('音频增益'),
+                subtitle: Slider(
+                  value: audio.gainDb,
+                  min: -12,
+                  max: 12,
+                  divisions: 48,
+                  label:
+                      '${audio.gainDb > 0 ? '+' : ''}${audio.gainDb.toStringAsFixed(1)} dB',
+                  onChanged: audio.setGainDb,
+                ),
+                trailing: Text(
+                  '${audio.gainDb > 0 ? '+' : ''}${audio.gainDb.toStringAsFixed(1)} dB',
+                  style: const TextStyle(fontSize: 12),
                 ),
               ),
             ],

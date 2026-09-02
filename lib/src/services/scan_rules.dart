@@ -225,9 +225,15 @@ String? pickLocalCover(List<CoverCandidate> candidates) {
 }
 
 /// 图片魔数校验（JPEG/PNG/GIF/BMP/WEBP）。
+///
+/// 只读文件头 16 字节——实机反馈 2026-09-02：扫描卡死且无法取消
+/// 的根因之一是全文件 readAsBytesSync（伪装图片的大文件同步阻塞，
+/// 无法响应 cancel）。
 bool _hasImageMagic(String path) {
+  RandomAccessFile? raf;
   try {
-    final bytes = File(path).readAsBytesSync();
+    raf = File(path).openSync();
+    final bytes = raf.readSync(16);
     if (bytes.length < 12) return false;
     if (bytes[0] == 0xFF && bytes[1] == 0xD8) return true; // JPEG
     if (bytes[0] == 0x89 && bytes[1] == 0x50) return true; // PNG
@@ -239,6 +245,8 @@ bool _hasImageMagic(String path) {
     return false;
   } catch (_) {
     return false;
+  } finally {
+    try { raf?.closeSync(); } catch (_) {}
   }
 }
 

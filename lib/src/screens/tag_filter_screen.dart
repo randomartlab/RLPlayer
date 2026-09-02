@@ -18,11 +18,20 @@ import 'work_detail_screen.dart';
 /// 双模式：
 /// - 本地：works.tags（metadata.json）+ NetMeta.netTags 内存过滤 → 本地作品网格；
 /// - 在线：asmr.one 关键词搜索（标签名）→ 在线作品网格。
+/// 筛选字段类型（2026-09-02：社团/CV 也可点标签筛选本地作品）。
+enum FilterField { tag, circle, vas }
+
 class TagFilterScreen extends StatefulWidget {
-  const TagFilterScreen({super.key, required this.tag, this.online = false});
+  const TagFilterScreen({
+    super.key,
+    required this.tag,
+    this.online = false,
+    this.field = FilterField.tag,
+  });
 
   final String tag;
   final bool online;
+  final FilterField field;
 
   @override
   State<TagFilterScreen> createState() => _TagFilterScreenState();
@@ -56,15 +65,32 @@ class _TagFilterScreenState extends State<TagFilterScreen> {
       return;
     }
 
-    // 本地模式：works.tags + NetMeta.netTags。
+    // 本地模式：按字段类型匹配（标签/社团/CV），各字段本地 + 网络回填。
     final library = context.read<LibraryProvider>();
     final db = library.database;
     final result = <Work>[];
     for (final work in library.works) {
-      var hit = work.tags.contains(widget.tag);
+      var hit = switch (widget.field) {
+        FilterField.circle =>
+          work.circleName == widget.tag || work.circleName?.contains(widget.tag) == true,
+        FilterField.vas =>
+          work.vasNames.contains(widget.tag) ||
+              work.vasNames.any((v) => v.contains(widget.tag)),
+        FilterField.tag => work.tags.contains(widget.tag),
+      };
       if (!hit && db != null && work.rjCode != null) {
         final meta = await db.queryNetMeta(work.rjCode!);
-        hit = meta?.netTags.contains(widget.tag) ?? false;
+        if (meta != null) {
+          hit = switch (widget.field) {
+            FilterField.circle =>
+              meta.netCircle == widget.tag ||
+                  meta.netCircle?.contains(widget.tag) == true,
+            FilterField.vas =>
+              meta.netVas.contains(widget.tag) ||
+                  meta.netVas.any((v) => v.contains(widget.tag)),
+            FilterField.tag => meta.netTags.contains(widget.tag),
+          };
+        }
       }
       if (hit) result.add(work);
     }
@@ -83,7 +109,11 @@ class _TagFilterScreenState extends State<TagFilterScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('标签：${widget.tag}'),
+        title: Text(switch (widget.field) {
+          FilterField.circle => '社团：${widget.tag}',
+          FilterField.vas => 'CV：${widget.tag}',
+          FilterField.tag => '标签：${widget.tag}',
+        }),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

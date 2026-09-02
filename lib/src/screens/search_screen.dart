@@ -158,9 +158,27 @@ class _SearchScreenState extends State<SearchScreen> {
           hit = hit ||
               await _netMetaMatch(db, work,
                   (m) => m.netVas.any((v) => v.toLowerCase().contains(query)));
-        default: // 关键词：标题/社团 + 音轨名。
+        default:
+          // 关键词全字段（实机需求 2026-09-02：输入 CV/关键词/社团/题目
+          // 动态匹配）：标题/社团/CV/标签/RJ 号 + 音轨名 + NetMeta 回填。
           hit = work.title.toLowerCase().contains(keyword) ||
-              (work.circleName?.toLowerCase().contains(keyword) ?? false);
+              (work.circleName?.toLowerCase().contains(keyword) ?? false) ||
+              (work.rjCode?.toLowerCase().contains(keyword) ?? false) ||
+              work.vasNames.any(
+                  (v) => v.toLowerCase().contains(keyword)) ||
+              work.tags.any((t) => t.toLowerCase().contains(keyword));
+          if (!hit && db != null && work.rjCode != null) {
+            final meta = await db.queryNetMeta(work.rjCode!);
+            if (meta != null) {
+              hit = (meta.netTitle?.toLowerCase().contains(keyword) ??
+                      false) ||
+                  (meta.netCircle?.toLowerCase().contains(keyword) ?? false) ||
+                  meta.netVas.any(
+                      (v) => v.toLowerCase().contains(keyword)) ||
+                  meta.netTags.any(
+                      (t) => t.toLowerCase().contains(keyword));
+            }
+          }
           if (!hit) {
             final nodes = await library.nodesOf(work);
             hit = nodes.any((node) =>

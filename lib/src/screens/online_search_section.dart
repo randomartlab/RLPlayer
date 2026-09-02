@@ -177,13 +177,20 @@ class _OnlineSearchSectionState extends State<OnlineSearchSection> {
       ));
     }
 
-    // 选择器模式：全部标签/声优/社团列表。
+    // 选择器模式：全部标签/声优/社团列表（输入动态过滤 + 按作品数排序）。
     if (_isPickerMode && _results.isEmpty && !_loading) {
+      final q = widget.query.toLowerCase();
+      final filtered = q.isEmpty
+          ? _pickerItems
+          : _pickerItems
+              .where((item) =>
+                  ((item['name'] as String?) ?? '').toLowerCase().contains(q))
+              .toList();
       return ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: UiSpacing.small),
-        itemCount: _pickerItems.length,
+        itemCount: filtered.length,
         itemBuilder: (context, index) {
-          final item = _pickerItems[index];
+          final item = filtered[index];
           final name = item['name'] as String? ?? '';
           final count = item['count'] as int? ?? 0;
           return ListTile(

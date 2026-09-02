@@ -24,7 +24,7 @@ const String lyricExtension = '.lrc';
 const Set<String> subtitleExtensions = {'.vtt', '.srt'};
 
 /// 封面图片扩展名。
-const Set<String> imageExtensions = {'.jpg', '.jpeg', '.png', '.webp'};
+const Set<String> imageExtensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif'};
 
 /// metadata.json 候选文件名（Kikoeru 导出格式为主，PRD 决策 7）。
 const Set<String> metadataFileNames = {

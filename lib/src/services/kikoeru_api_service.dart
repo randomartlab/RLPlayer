@@ -197,37 +197,39 @@ class KikoeruApiService {
         .toList();
   }
 
-  /// 全部标签（搜索选择器用，2026-09-02；按使用数排序）。
+  /// 全部标签（搜索选择器；按使用数排序——API 无 count 排序参数，
+  /// 实测返回字母序，2026-09-02 客户端排序兜底）。
   Future<List<Map<String, dynamic>>> getAllTags() async {
     final response = await _dio.get('/api/tags/',
-        queryParameters: {'pageSize': 500, 'order': 'count'});
+        queryParameters: {'pageSize': 500});
     final data = response.data;
-    return (data is List ? data : (data['tags'] as List? ?? const []))
-        .whereType<Map>()
-        .map((m) => Map<String, dynamic>.from(m))
-        .toList();
+    return _sortByCount(data is List ? data : (data as Map)['tags']);
   }
 
-  /// 全部声优（搜索选择器用；按作品数排序）。
+  /// 全部声优（搜索选择器；按作品数客户端排序）。
   Future<List<Map<String, dynamic>>> getAllVas() async {
     final response = await _dio.get('/api/vas/',
-        queryParameters: {'pageSize': 1000, 'order': 'count'});
+        queryParameters: {'pageSize': 1000});
     final data = response.data;
-    return (data is List ? data : (data['vas'] as List? ?? const []))
-        .whereType<Map>()
-        .map((m) => Map<String, dynamic>.from(m))
-        .toList();
+    return _sortByCount(data is List ? data : (data as Map)['vas']);
   }
 
-  /// 全部社团（搜索选择器用；按作品数排序）。
+  /// 全部社团（搜索选择器；按作品数客户端排序）。
   Future<List<Map<String, dynamic>>> getAllCircles() async {
     final response = await _dio.get('/api/circles/',
-        queryParameters: {'pageSize': 1000, 'order': 'count'});
+        queryParameters: {'pageSize': 1000});
     final data = response.data;
-    return (data is List ? data : (data['circles'] as List? ?? const []))
+    return _sortByCount(data is List ? data : (data as Map)['circles']);
+  }
+
+  /// 按 count 字段降序（选择器「作品量优先」而非 A-Z，实机反馈 2026-09-02）。
+  static List<Map<String, dynamic>> _sortByCount(dynamic raw) {
+    return ((raw as List? ?? const [])
         .whereType<Map>()
         .map((m) => Map<String, dynamic>.from(m))
-        .toList();
+        .toList())
+      ..sort((a, b) => ((b['count'] as num?) ?? 0)
+          .compareTo((a['count'] as num?) ?? 0));
   }
 
   /// 声优的全部作品（搜索按 CV 选取后检索）。

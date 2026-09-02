@@ -450,46 +450,101 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
                 ],
               ),
             ),
+            // 网络标题：不限行完整显示（实机反馈 2026-09-02 截断）。
             if (_netMeta!.netTitle != null &&
                 _netMeta!.netTitle != widget.work.title)
-              _RefLine(label: _netMeta!.netTitle!),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Text(
+                  _netMeta!.netTitle!,
+                  style: TextStyle(
+                      fontSize: 15,
+                      height: 1.4,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  maxLines: null,
+                ),
+              ),
+            // 社团：标签化可点 → 筛选本地所有该社团作品。
             if (_netMeta!.netCircle != null &&
                 _netMeta!.netCircle != widget.work.circleName)
-              _RefLine(label: '社团：${_netMeta!.netCircle!}'),
-            if (_netMeta!.netVas.isNotEmpty)
-              Row(
-                children: [
-                  Expanded(
-                    child: _RefLine(
-                        label: _cvTranslations.isEmpty
-                            ? 'CV：${_netMeta!.netVas.join(' / ')}'
-                            : 'CV：${_netMeta!.netVas.map((v) => _cvTranslations[v] ?? v).join(' / ')}'),
-                  ),
-                  if (_netMeta!.netVas
-                      .any((v) => !TranslationService.isMostlyChinese(v)))
-                    IconButton(
-                      onPressed: _cvTranslating
-                          ? null
-                          : () => _translateCvs(_netMeta!.netVas),
-                      icon: _cvTranslating
-                          ? SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Theme.of(context).colorScheme.primary),
-                            )
-                          : Icon(
-                              Icons.g_translate,
-                              size: 18,
-                              color: _cvTranslations.isEmpty
-                                  ? Theme.of(context).colorScheme.onSurfaceVariant
-                                  : Theme.of(context).colorScheme.primary,
-                            ),
-                      tooltip: '翻译 CV 名',
+              Padding(
+                padding: const EdgeInsets.only(top: UiSpacing.xSmall),
+                child: Wrap(
+                  spacing: UiSpacing.xSmall,
+                  runSpacing: UiSpacing.xSmall,
+                  children: [
+                    _RefChip(
+                      label: '社团：${_netMeta!.netCircle}',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (context) => TagFilterScreen(
+                            tag: _netMeta!.netCircle!,
+                            field: FilterField.circle,
+                          ),
+                        ),
+                      ),
                     ),
-                ],
+                  ],
+                ),
               ),
+            // CV：标签化可点（每个 CV 一个 chip）+ 整组翻译按钮。
+            if (_netMeta!.netVas.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: UiSpacing.xSmall),
+                child: Row(
+                  children: [
+                    if (_netMeta!.netVas
+                        .any((v) => !TranslationService.isMostlyChinese(v)))
+                      IconButton(
+                        onPressed: _cvTranslating
+                            ? null
+                            : () => _translateCvs(_netMeta!.netVas),
+                        icon: _cvTranslating
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primary),
+                              )
+                            : Icon(
+                                Icons.g_translate,
+                                size: 18,
+                                color: _cvTranslations.isEmpty
+                                    ? Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant
+                                    : Theme.of(context).colorScheme.primary,
+                              ),
+                        tooltip: '翻译 CV 名',
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: UiSpacing.xSmall),
+                child: Wrap(
+                  spacing: UiSpacing.xSmall,
+                  runSpacing: UiSpacing.xSmall,
+                  children: [
+                    for (final vas in _netMeta!.netVas)
+                      _RefChip(
+                        label: _cvTranslations[vas] ?? 'CV：$vas',
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (context) => TagFilterScreen(
+                              tag: vas,
+                              field: FilterField.vas,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
             if (_netMeta!.netRelease != null)
               _RefLine(
                   label: '发行：${_netMeta!.netRelease!.year}-${_netMeta!.netRelease!.month.toString().padLeft(2, '0')}-${_netMeta!.netRelease!.day.toString().padLeft(2, '0')}'),
@@ -525,10 +580,10 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: UiSpacing.small),
                 child: Text(
+                  // 不限行完整显示（实机反馈 2026-09-02）。
                   _netMeta!.netDescription!,
                   style: Theme.of(context).textTheme.bodySmall,
-                  maxLines: 6,
-                  overflow: TextOverflow.ellipsis,
+                  maxLines: null,
                 ),
               ),
           ],
@@ -795,6 +850,26 @@ class _TitleTranslateButton extends StatelessWidget {
               color: translated ? scheme.primary : scheme.onSurfaceVariant,
             ),
       tooltip: translated ? '显示原文' : '翻译标题',
+    );
+  }
+}
+
+/// 参考信息区可点 chip（社团/CV 标签化筛选入口）。
+class _RefChip extends StatelessWidget {
+  const _RefChip({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ActionChip(
+      label: Text(label, style: const TextStyle(fontSize: 11)),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      backgroundColor: scheme.secondaryContainer,
+      onPressed: onTap,
     );
   }
 }

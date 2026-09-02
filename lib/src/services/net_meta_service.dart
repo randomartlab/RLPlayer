@@ -73,6 +73,11 @@ class NetMetaService {
       }
     }
 
+    // 强制刷新直连执行，不入后台串行队列（手动补 RJ 后立即可见，
+    // 实机反馈 2026-09-02：forceRefresh 被回填队列阻塞显得不拉取）。
+    if (forceRefresh) {
+      return _fetch(rjCode, numeric, true);
+    }
     // 串行队列限流。
     final result = await _enqueue(() => _fetch(rjCode, numeric, forceRefresh));
     return result;

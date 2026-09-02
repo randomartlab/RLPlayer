@@ -316,6 +316,22 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           duration: const Duration(seconds: 2)));
     }
     await _loadNetMeta(forceRefresh: true);
+    if (!mounted) return;
+    final meta = _netMeta;
+    if (meta != null && !meta.noResult) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('已拉取网络信息（社团/CV/封面等）'),
+          duration: Duration(seconds: 2)));
+    } else if (meta != null && meta.noResult) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('该 RJ 在 asmr.one / DLsite 暂未查到网络信息，可稍后在'
+              '「网络参考信息」处重试'),
+          duration: Duration(seconds: 3)));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('网络信息拉取失败（请检查网络/代理后重试）'),
+          duration: Duration(seconds: 3)));
+    }
     unawaited(_loadOnlineRelated());
     if (!mounted) return;
     final again =
@@ -398,6 +414,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final work = _workOverride ?? widget.work;
     final library = context.watch<LibraryProvider>();
     final related = library.relatedWorks(work);
@@ -531,6 +548,33 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           const SizedBox(height: UiSpacing.large),
 
           // ---- 网络参考信息（M11，PRD §5.5 ④–⑨：独立区块，辅助样式）----
+          if (!_netMetaLoading &&
+              _netMeta != null &&
+              _netMeta!.noResult) ...[
+            const SizedBox(height: UiSpacing.small),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: UiSpacing.xSmall),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline,
+                      size: 14, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: UiSpacing.xSmall),
+                  Expanded(
+                    child: Text(
+                      '该作品暂无可展示的网络信息（asmr.one / DLsite 均未收录或网络受限）',
+                      style: TextStyle(
+                          fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh, size: 16),
+                    tooltip: '重试',
+                    onPressed: () => _loadNetMeta(forceRefresh: true),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (_netMetaLoading)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: UiSpacing.medium),

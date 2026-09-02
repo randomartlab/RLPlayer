@@ -5,10 +5,12 @@
 library;
 
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
 import '../services/subtitle_parser.dart';
+import '../services/scan_rules.dart' show decodeTextWithFallback;
 import '../utils/ui_tokens.dart';
 
 /// 预览数据源：本地文件路径或已下载的文本内容。
@@ -50,7 +52,11 @@ class _SubtitlePreviewScreenState extends State<SubtitlePreviewScreen> {
         content = widget.source.textContent!;
       } else {
         final file = File(widget.source.filePath!);
-        content = await file.readAsString();
+        // 编码嗅探：UTF-8 / GBK / Shift-JIS 等（实机反馈 2026-09-02：
+        // 部分本地字幕为 GBK 编码 readAsString 乱码/异常）。
+        final bytes = await file.readAsBytes();
+        content = decodeTextWithFallback(bytes) ??
+            utf8.decode(bytes, allowMalformed: true);
       }
       if (!mounted) return;
       setState(() => _lines = _parse(content));

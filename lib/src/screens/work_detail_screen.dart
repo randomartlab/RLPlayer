@@ -20,6 +20,7 @@ import '../utils/ui_tokens.dart';
 import '../widgets/comment_section.dart';
 import '../widgets/work_status_bar.dart';
 import '../widgets/translation_toggle_button.dart';
+import 'image_preview_screen.dart';
 import 'subtitle_preview_screen.dart';
 import '../widgets/enhanced_work_card.dart';
 import '../widgets/file_tree_view.dart';
@@ -136,15 +137,18 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
   Future<void> _loadNodes() async {
     final library = context.read<LibraryProvider>();
     final nodes = await library.nodesOf(widget.work);
-    // 附加字幕/歌词文件节点（预览用，不进播放队列）。
-    final subtitleNodes = _scanSubtitleFiles();
+    // 附加字幕/图片文件节点（预览用，不进播放队列）。
+    final extraNodes = _scanPreviewFiles();
     if (mounted) {
-      setState(() => _nodes = [...nodes, ...subtitleNodes]);
+      setState(() => _nodes = [...nodes, ...extraNodes]);
     }
   }
 
-  /// 扫描作品目录下的 .srt/.vtt/.lrc 文件构造预览节点。
-  List<FileNode> _scanSubtitleFiles() {
+  /// 扫描作品目录下的字幕（.srt/.vtt/.lrc）与图片文件构造预览节点。
+  ///
+  /// 图片不含封面文件（封面由详情头图展示）；2026-09-02 用户需求：
+  /// 文件树内浏览非封面图片（类似打开歌词）。
+  List<FileNode> _scanPreviewFiles() {
     final result = <FileNode>[];
     final root = Directory(widget.work.rootPath);
     if (!root.existsSync()) return result;
@@ -153,15 +157,27 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
         .where((n) => !n.isDirectory)
         .map((n) => n.relativePath)
         .toSet();
+    // 排除已用作封面的本地文件。
+    final coverPath = widget.work.coverPath;
     try {
       final entities = root.listSync(recursive: true);
       for (final entity in entities) {
         if (entity is! File) continue;
         final lower = entity.path.toLowerCase();
-        if (!lower.endsWith('.srt') &&
-            !lower.endsWith('.vtt') &&
-            !lower.endsWith('.lrc')) {
-          continue;
+        final isSubtitle = lower.endsWith('.srt') ||
+            lower.endsWith('.vtt') ||
+            lower.endsWith('.lrc');
+        final isImage = lower.endsWith('.png') ||
+            lower.endsWith('.jpg') ||
+            lower.endsWith('.jpeg') ||
+            lower.endsWith('.webp') ||
+            lower.endsWith('.gif') ||
+            lower.endsWith('.bmp');
+        if (!isSubtitle && !isImage) continue;
+        if (coverPath != null &&
+            coverPath.isNotEmpty &&
+            entity.path == coverPath) {
+          continue; // 封面不进文件树。
         }
         final rel = p.relative(entity.path, from: root.path);
         if (existingPaths.contains(rel)) continue;
@@ -174,11 +190,12 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           relativePath: rel,
           parentPath: parent,
           filePath: entity.path,
-          isSubtitleFile: true,
+          isSubtitleFile: isSubtitle,
+          isImageFile: isImage,
         ));
       }
     } catch (_) {
-      // 目录不可读时静默——仅少展示字幕文件。
+      // 目录不可读时静默。
     }
     return result;
   }
@@ -242,6 +259,13 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
   /// 按节点精确定位播放（实机 bug 修复：视觉序号 ≠ DB 序号导致点任何
   /// 音轨都播第一个；改为按 track.id 匹配，不依赖顺序）。
   Future<void> _playFromNode(FileNode node) async {
+    if (node.isImageFile) {
+      // 图片 → 全屏浏览（实机需求 2026-09-02）。
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => ImagePreviewScreen.local(filePath: node.filePath!),
+      ));
+      return;
+    }
     if (node.isSubtitleFile) {
       // 字幕/歌词文件 → 预览（实机需求 2026-09-02）。
       await Navigator.of(context).push(MaterialPageRoute<void>(

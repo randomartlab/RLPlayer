@@ -206,6 +206,7 @@ class _TrackRow extends StatelessWidget {
     // 太不明显且易与音轨混淆误点）。
     final isCaption = node.isSubtitleFile;
     final isLrc = isCaption && node.name.toLowerCase().endsWith('.lrc');
+    final isPic = node.isImageFile;
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
@@ -219,7 +220,12 @@ class _TrackRow extends StatelessWidget {
                     : scheme.secondaryContainer.withValues(alpha: 0.55),
                 borderRadius: BorderRadius.circular(UiRadii.list),
               )
-            : null,
+            : isPic
+                ? BoxDecoration(
+                    color: scheme.primaryContainer.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(UiRadii.list),
+                  )
+                : null,
         child: Padding(
           padding: EdgeInsets.only(
             left: UiSpacing.large + depth * 20.0,
@@ -229,7 +235,25 @@ class _TrackRow extends StatelessWidget {
           ),
           child: Row(
             children: [
-              if (isCaption)
+              if (isPic)
+                Container(
+                  width: 28,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '图',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: scheme.onPrimary,
+                    ),
+                  ),
+                )
+              else if (isCaption)
                 // 字幕文件：类型徽章替代音轨序号，杜绝误认为可播音轨。
                 Container(
                   width: 28,

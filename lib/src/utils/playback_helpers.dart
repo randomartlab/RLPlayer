@@ -10,6 +10,7 @@ List<AudioTrack> tracksOf(Work work, List<FileNode> nodes) {
       .where((node) =>
           !node.isDirectory &&
           !node.isSubtitleFile &&
+          !node.isImageFile &&
           node.filePath != null)
       .map((node) => AudioTrack(
             id: 'node_${node.id}',

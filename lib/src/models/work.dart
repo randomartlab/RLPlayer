@@ -118,6 +118,7 @@ class FileNode {
     this.lyricPath,
     this.subtitlePath,
     this.isSubtitleFile = false,
+    this.isImageFile = false,
   });
 
   final int id;
@@ -149,6 +150,9 @@ class FileNode {
 
   /// 字幕/歌词文件节点（预览用；不进播放队列——tracksOf 会排除）。
   final bool isSubtitleFile;
+
+  /// 图片文件节点（非封面内容图浏览，2026-09-02）。
+  final bool isImageFile;
 
   /// 播放器显示名（去扩展名）。
   String get displayName {

@@ -591,7 +591,9 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
                     ],
                     const SizedBox(height: UiSpacing.large),
                     // 评论区（默认收起；实机需求 2026-09-02）。
-                    CommentSection(workId: work.id),
+                    CommentSection(
+                        workId: work.id,
+                        rjCode: work.sourceId),
                     const SizedBox(height: UiSpacing.small),
                     // 文件树（流播入口）+ 文件名翻译切换（kikoflu 同款）。
                     Row(

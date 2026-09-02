@@ -19,6 +19,7 @@ class OnlineWork {
     this.reviewCount,
     this.price,
     this.averageRating,
+    this.sourceId,
     this.description,
     this.children,
   });
@@ -27,6 +28,9 @@ class OnlineWork {
   final String title;
   final String? titleTranslation;
   final String? circleName;
+
+  /// DLsite 源作品号（source_id，如 RJ01657200）——评论/详情跳转用。
+  final String? sourceId;
 
   /// 服务端社团 id（相关推荐按社团检索用）。
   final int? circleId;
@@ -77,6 +81,7 @@ class OnlineWork {
       averageRating: ((json['rate_average_2dp'] ?? json['averageRating'])
               as num?)
           ?.toDouble(),
+      sourceId: json['source_id'] as String?,
       description: json['description'] as String?,
       children: (json['children'] as List?)
           ?.map((child) =>

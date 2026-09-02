@@ -5,7 +5,7 @@
 library;
 
 /// 封面来源标记（PRD §5.9.2：详情页与播放器统一走该降级链）。
-enum CoverSource { localFile, embedded, placeholder }
+enum CoverSource { localFile, embedded, network, placeholder }
 
 /// 本地作品。
 class Work {

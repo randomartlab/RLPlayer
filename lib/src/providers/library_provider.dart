@@ -73,6 +73,12 @@ class LibraryProvider extends ChangeNotifier {
     _sortWorks();
   }
 
+  /// 公开刷新（后台 NetMeta 回填含封面落盘后调用，2026-09-02）。
+  Future<void> reloadWorks() async {
+    await _reloadWorks();
+    notifyListeners();
+  }
+
   void _sortWorks() {
     int compare(Work a, Work b) {
       switch (sortBy) {

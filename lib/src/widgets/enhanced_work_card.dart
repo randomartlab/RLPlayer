@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../models/work.dart';
-import '../providers/library_provider.dart';
+import '../providers/mirror_provider.dart';
 import 'package:provider/provider.dart';
 import '../utils/ui_tokens.dart';
 
@@ -99,22 +99,21 @@ class WorkCover extends StatelessWidget {
     return _networkFallback(context, scheme);
   }
 
-  /// 网络封面兜底（NetMeta.netCoverUrl）；无网络数据 → 占位。
+  /// 网络封面兜底（RJ 号 → asmr.one 封面 URL 直取；2026-09-02 实机反馈：
+  /// 无图作品未显示网络封面——不依赖 NetMeta 缓存，URL 可直接组装）。
   Widget _networkFallback(BuildContext context, ColorScheme scheme) {
-    final library = context.read<LibraryProvider>();
-    final meta = library.netMetaOf(work);
-    final url = meta?.netCoverUrl;
-    if (url != null && url.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(borderRadius),
-        child: Image.network(
-          url,
-          fit: fit,
-          errorBuilder: (_, _, _) => _placeholder(scheme),
-        ),
-      );
-    }
-    return _placeholder(scheme);
+    final rj = work.rjCode;
+    final numeric = rj != null ? int.tryParse(rj.replaceAll(RegExp(r'[^0-9]'), '')) : null;
+    if (numeric == null) return _placeholder(scheme);
+    final mirror = context.read<MirrorProvider>();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: Image.network(
+        mirror.api.coverUrl(numeric),
+        fit: fit,
+        errorBuilder: (_, _, _) => _placeholder(scheme),
+      ),
+    );
   }
 
   Widget _placeholder(ColorScheme scheme) {
@@ -321,7 +320,6 @@ class _MediumCard extends StatelessWidget {
 
   /// 大字体缩放模式：仅封面撑满卡片。
   Widget _coverOnly(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Hero(
       tag: 'work_cover_${work.id}',
       child: Stack(

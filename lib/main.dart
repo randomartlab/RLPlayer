@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
+import 'src/models/work.dart';
 import 'src/providers/audio_provider.dart';
 import 'src/providers/download_provider.dart';
 import 'src/providers/library_provider.dart';
@@ -314,6 +315,14 @@ class _NetMetaBackfillSchedulerState extends State<_NetMetaBackfillScheduler> {
       _scheduled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         Future<void>.delayed(const Duration(seconds: 8), () async {
+          bool _needsCover(LibraryProvider lib, String rj) {
+            final w = lib.works
+                .where((x) => x.rjCode == rj)
+                .firstOrNull;
+            return w != null &&
+                w.coverSource == CoverSource.placeholder;
+          }
+
           try {
             final library = context.read<LibraryProvider>();
             final service = context.read<NetMetaService>();
@@ -322,14 +331,23 @@ class _NetMetaBackfillSchedulerState extends State<_NetMetaBackfillScheduler> {
             final existing = (await db.queryAllNetMeta())
                 .map((m) => m.rjCode)
                 .toSet();
+            // 回填条件：缺 NetMeta，或有 NetMeta 但作品仍无封面
+            // （实机反馈 2026-09-02：回填先于扫描落库的时序会让封面兜底
+            // 落空——getMeta 缓存命中也会跑封面兜底，这里补触发）。
             final missing = library.works
-                .where((w) =>
-                    w.rjCode != null && !existing.contains(w.rjCode))
+                .where((w) => w.rjCode != null)
                 .map((w) => w.rjCode!)
+                .where((rj) =>
+                    !existing.contains(rj) ||
+                    _needsCover(library, rj))
                 .toList();
             if (missing.isEmpty) return;
             debugPrint('[NetMeta] 后台回填 ${missing.length} 个作品');
             await service.backfillAll(missing);
+            // 回填含封面落盘（cover_source → network）——刷新作品列表。
+            if (missing.isNotEmpty) {
+              await library.reloadWorks();
+            }
           } catch (_) {}
         });
       });

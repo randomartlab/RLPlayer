@@ -83,7 +83,6 @@ class _SubtitlePreviewScreenState extends State<SubtitlePreviewScreen> {
         final text = line.substring(match.end).trim();
         if (text.isEmpty) continue;
         final m = int.parse(match.group(1)!);
-        final s = int.parse(match.group(2)!);
         lines.add(_PreviewLine(
           timestamp: '$m:${match.group(2)}',
           text: text,

@@ -323,37 +323,6 @@ class SettingsScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _showSchemePicker(BuildContext context) async {
-    final themeSettings = context.read<ThemeSettingsProvider>();
-    final types = ColorSchemeType.values;
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('配色方案'),
-        children: [
-          RadioGroup<ColorSchemeType>(
-            groupValue: themeSettings.settings.colorSchemeType,
-            onChanged: (value) {
-              if (value != null) {
-                themeSettings.setColorSchemeType(value);
-              }
-              Navigator.of(context).pop();
-            },
-            child: Column(
-              children: [
-                for (final type in types)
-                  RadioListTile<ColorSchemeType>(
-                    value: type,
-                    title: Text(_schemeLabel(type)),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 /// 设置分组卡片：圆角 16dp + 0.5dp 边框（UI 规范 §5.5）。

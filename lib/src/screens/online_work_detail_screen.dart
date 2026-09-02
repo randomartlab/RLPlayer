@@ -799,9 +799,15 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
     final scheme = Theme.of(context).colorScheme;
     final indent = widget.depth * 20.0;
 
+    // 名称排序（实机需求 2026-09-02）：目录前、同类按名称。
+    final sortedNodes = [...widget.nodes]..sort((a, b) {
+      if (a.isFolder != b.isFolder) return a.isFolder ? -1 : 1;
+      return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+    });
+
     return Column(
       children: [
-        for (final node in widget.nodes)
+        for (final node in sortedNodes)
           if (node.isFolder) ...[
             // 文件夹行：点按切换展开。
             ListTile(
@@ -841,27 +847,20 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
           ] else
             // 全部文件类型都显示；非音频保留完整文件名 + 类型徽章（用户反馈：
             // 「歌名.mp3.vtt」截成「歌名.mp3」会被误认为音频）。
-            ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.only(left: 16 + indent, right: 16),
-              leading: _fileIcon(context, node),
-              title: Text(
-                node.isAudio
-                    ? (widget.displayName?.call(_stripExt(node.title)) ??
-                        _stripExt(node.title))
-                    : (widget.displayName?.call(node.title) ?? node.title),
-                maxLines: null,
-                style: const TextStyle(fontSize: 20),
-              ),
-              trailing: node.isAudio
-                  ? const Icon(Icons.play_circle_outline)
-                  : _typeBadge(context, node),
-              onTap: node.isAudio
+            // 字幕/歌词文件（srt/vtt/lrc）：彩色背景胶囊行醒目标识，
+            // 前缀「字/词」徽章与音轨明显区分（实机需求 2026-09-02）。
+            _SubtitleBadgeTile(
+              node: node,
+              indent: indent,
+              scheme: scheme,
+              displayName: widget.displayName,
+              isPreviewable: _isPreviewable(node.title),
+              onPreview: () => _previewSubtitle(context, node),
+              onPlay: node.isAudio
                   ? () => widget.onTrackTap(
                       widget.flatAudioNodes.indexOf(node))
-                  : _isPreviewable(node.title)
-                      ? () => _previewSubtitle(context, node)
-                      : null,
+                  : null,
+              stripExt: _stripExt,
             ),
       ],
     );
@@ -873,51 +872,7 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
   }
 
   /// 非音频文件类型徽章（颜色区分，用户建议）。
-  Widget _typeBadge(BuildContext context, OnlineFileNode node) {
-    final scheme = Theme.of(context).colorScheme;
-    final ext = node.title.contains('.')
-        ? node.title.substring(node.title.lastIndexOf('.')).toLowerCase()
-        : '';
-    final (label, color) = switch (ext) {
-      '.srt' || '.vtt' => ('字幕', scheme.tertiary),
-      '.lrc' => ('歌词', scheme.tertiary),
-      '.txt' => ('文本', scheme.onSurfaceVariant),
-      '.mp4' || '.mkv' || '.avi' || '.webm' => ('视频', scheme.onSurfaceVariant),
-      '.jpg' || '.png' || '.gif' || '.webp' => ('图片', scheme.onSurfaceVariant),
-      _ => (ext.replaceFirst('.', ''), scheme.onSurfaceVariant),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(UiRadii.tag),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
-      ),
-      child: Text(label,
-          style: TextStyle(
-              fontSize: 11, color: color, fontWeight: FontWeight.w500)),
-    );
-  }
 
-  Widget _fileIcon(BuildContext context, OnlineFileNode node) {
-    final scheme = Theme.of(context).colorScheme;
-    final ext = node.title.contains('.')
-        ? node.title.substring(node.title.lastIndexOf('.')).toLowerCase()
-        : '';
-    final (icon, color) = switch (ext) {
-      '.mp3' || '.m4a' || '.flac' || '.wav' || '.ogg' || '.opus' =>
-        (Icons.music_note_outlined, scheme.primary),
-      '.srt' || '.vtt' => (Icons.subtitles_outlined, scheme.tertiary),
-      '.lrc' => (Icons.lyrics_outlined, scheme.tertiary),
-      '.mp4' || '.mkv' || '.avi' || '.webm' =>
-        (Icons.movie_outlined, scheme.onSurfaceVariant),
-      '.jpg' || '.png' || '.gif' || '.webp' =>
-        (Icons.image_outlined, scheme.onSurfaceVariant),
-      '.pdf' => (Icons.picture_as_pdf_outlined, scheme.onSurfaceVariant),
-      _ => (Icons.insert_drive_file_outlined, scheme.onSurfaceVariant),
-    };
-    return Icon(icon, size: UiIconSize.large, color: color);
-  }
 }
 
 
@@ -951,6 +906,105 @@ class _TitleTranslateButton extends StatelessWidget {
               color: translated ? scheme.primary : scheme.onSurfaceVariant,
             ),
       tooltip: translated ? '显示原文' : '翻译标题',
+    );
+  }
+}
+
+/// 在线文件树行（字幕醒目版）：音频行保持原样；字幕/歌词文件用
+/// 彩色背景 + 「词/字」徽章 + 预览入口。
+class _SubtitleBadgeTile extends StatelessWidget {
+  const _SubtitleBadgeTile({
+    required this.node,
+    required this.indent,
+    required this.scheme,
+    required this.displayName,
+    required this.isPreviewable,
+    required this.onPreview,
+    required this.onPlay,
+    required this.stripExt,
+  });
+
+  final OnlineFileNode node;
+  final double indent;
+  final ColorScheme scheme;
+  final String Function(String)? displayName;
+  final bool isPreviewable;
+  final VoidCallback onPreview;
+  final VoidCallback? onPlay;
+  final String Function(String) stripExt;
+
+  @override
+  Widget build(BuildContext context) {
+    if (onPlay != null) {
+      // 音频行：原样（含类型图标）。
+      return ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.only(left: 16 + indent, right: 16),
+        leading: Icon(Icons.music_note, color: scheme.primary, size: 22),
+        title: Text(
+          displayName?.call(stripExt(node.title)) ?? stripExt(node.title),
+          maxLines: null,
+          style: const TextStyle(fontSize: 20),
+        ),
+        trailing: const Icon(Icons.play_circle_outline),
+        onTap: onPlay,
+      );
+    }
+    // 字幕/歌词等非音频行。
+    final isLrc = node.title.toLowerCase().endsWith('.lrc');
+    final captionColor = isLrc ? scheme.tertiary : scheme.secondary;
+    final captionOn = isLrc ? scheme.onTertiary : scheme.onSecondary;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+      decoration: BoxDecoration(
+        color: captionColor.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(UiRadii.list),
+      ),
+      child: ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.only(left: 16 + indent, right: 12),
+        leading: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: captionColor,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            isLrc ? '词' : '字',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: captionOn,
+            ),
+          ),
+        ),
+        title: Text(
+          displayName?.call(node.title) ?? node.title,
+          maxLines: null,
+          style: const TextStyle(fontSize: 20),
+        ),
+        trailing: isPreviewable
+            ? Icon(Icons.visibility_outlined,
+                color: scheme.onSurfaceVariant)
+            : _fileTypeBadge(context),
+        onTap: isPreviewable ? onPreview : null,
+      ),
+    );
+  }
+
+  Widget _fileTypeBadge(BuildContext context) {
+    final ext = node.title.contains('.')
+        ? node.title.split('.').last.toLowerCase()
+        : '';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(ext.toUpperCase(),
+          style: TextStyle(
+              fontSize: 10, color: scheme.onSurfaceVariant)),
     );
   }
 }

@@ -79,12 +79,19 @@ class _FileTreeViewState extends State<FileTreeView> {
   @override
   Widget build(BuildContext context) {
     final visible = _visibleNodes();
+    // 名称排序（实机需求 2026-09-02）：目录按名称、文件按名称；
+    // 目录保持在前（沿用 DB 目录优先约定）。字幕/歌词文件按名称
+    // 与音频混排（便于对照同名词频）。
+    final sorted = [...visible]..sort((a, b) {
+      if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
 
     var trackOrdinal = 0; // 音轨序号（跨目录连续编号）。
 
     return Column(
       children: [
-        for (final node in visible)
+        for (final node in sorted)
           if (node.isDirectory)
             _DirectoryRow(
               node: node,
@@ -195,28 +202,66 @@ class _TrackRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // 字幕/歌词文件行：醒目标识 + 点击预览（实机需求 2026-09-02：
+    // 太不明显且易与音轨混淆误点）。
+    final isCaption = node.isSubtitleFile;
+    final isLrc = isCaption && node.name.toLowerCase().endsWith('.lrc');
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(UiRadii.list),
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: UiSpacing.large + depth * 20.0,
-          right: UiSpacing.medium,
-          top: UiSpacing.small,
-          bottom: UiSpacing.small,
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 28,
-              child: Text(
-                '$ordinal',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 16, color: scheme.onSurfaceVariant),
-              ),
-            ),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 2),
+        decoration: isCaption
+            ? BoxDecoration(
+                color: isLrc
+                    ? scheme.tertiaryContainer.withValues(alpha: 0.55)
+                    : scheme.secondaryContainer.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(UiRadii.list),
+              )
+            : null,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: UiSpacing.large + depth * 20.0,
+            right: UiSpacing.medium,
+            top: UiSpacing.small,
+            bottom: UiSpacing.small,
+          ),
+          child: Row(
+            children: [
+              if (isCaption)
+                // 字幕文件：类型徽章替代音轨序号，杜绝误认为可播音轨。
+                Container(
+                  width: 28,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isLrc
+                        ? scheme.tertiary
+                        : scheme.secondary,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    isLrc ? '词' : '字',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: isLrc
+                          ? scheme.onTertiary
+                          : scheme.onSecondary,
+                    ),
+                  ),
+                )
+              else
+                SizedBox(
+                  width: 28,
+                  child: Text(
+                    '$ordinal',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 16, color: scheme.onSurfaceVariant),
+                  ),
+                ),
             const SizedBox(width: UiSpacing.medium),
             Expanded(
               child: Column(
@@ -264,6 +309,7 @@ class _TrackRow extends StatelessWidget {
               ),
             ),
           ],
+          ),
         ),
       ),
     );

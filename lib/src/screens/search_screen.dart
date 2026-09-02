@@ -45,7 +45,6 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _updateSuggestions() {
     final library = context.read<LibraryProvider>();
-    final db = library.database;
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) {
       if (_suggestions.isNotEmpty) setState(() => _suggestions = const []);

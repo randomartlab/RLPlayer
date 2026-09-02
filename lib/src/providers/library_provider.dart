@@ -229,6 +229,15 @@ class LibraryProvider extends ChangeNotifier {
   int get lastScannedWorks => _lastScannedWorks;
   String? get lastScanError => _lastScanError;
 
+  /// 手动补录 RJ 号（详情页对未识别作品，2026-09-02）。
+  Future<bool> setWorkRjCode(int workId, String rjCode) async {
+    final db = _db;
+    if (db == null) return false;
+    await db.updateWorkRjCode(workId, rjCode.toUpperCase());
+    await reloadWork(workId);
+    return true;
+  }
+
   Future<void> rescan() async {
     if (_scanning) return;
     final db = _db;

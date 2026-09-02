@@ -256,6 +256,51 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     }
   }
 
+  /// 未识别 RJ 作品：手动填写 RJ 号（触发元数据/封面拉取，2026-09-02）。
+  Future<void> _promptSetRj() async {
+    final controller = TextEditingController();
+    final rj = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('填写 RJ 号'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '如 RJ123456',
+            helperText: '文件夹内无 RJ 信息时手动补充，可拉取网络元数据与封面',
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消')),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (rj == null || !rj.startsWith(RegExp(r'(?i)^rj\d{4,}$'))) {
+      if (rj != null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('RJ 号格式应为 RJ + 数字，如 RJ123456')));
+      }
+      return;
+    }
+    final library = context.read<LibraryProvider>();
+    await library.setWorkRjCode(widget.work.id, rj);
+    if (!mounted) return;
+    final fresh =
+        await context.read<LibraryProvider>().reloadWork(widget.work.id);
+    if (mounted && fresh != null) {
+      setState(() => _workOverride = fresh);
+    }
+    // 拉取元数据/封面。
+    await _loadNetMeta(forceRefresh: true);
+  }
+
   /// 按节点精确定位播放（实机 bug 修复：视觉序号 ≠ DB 序号导致点任何
   /// 音轨都播第一个；改为按 track.id 匹配，不依赖顺序）。
   Future<void> _playFromNode(FileNode node) async {
@@ -429,7 +474,21 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           if (work.rjCode != null) WorkStatusBar(rjCode: work.rjCode!),
 
           // ③ 本地文件信息（RJ 号、文件数、总时长、本地路径）。
-          _InfoRow(label: work.rjCode ?? '未识别 RJ 号', icon: Icons.tag),
+          Row(
+            children: [
+              Expanded(
+                child: _InfoRow(
+                    label: work.rjCode ?? '未识别 RJ 号',
+                    icon: Icons.tag),
+              ),
+              if (work.rjCode == null)
+                TextButton.icon(
+                  onPressed: _promptSetRj,
+                  icon: const Icon(Icons.edit_note, size: 16),
+                  label: const Text('填写 RJ', style: TextStyle(fontSize: 12)),
+                ),
+            ],
+          ),
           const SizedBox(height: UiSpacing.xSmall),
           _InfoRow(
             label: '${work.trackCount} 个音轨'

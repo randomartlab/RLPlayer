@@ -366,6 +366,12 @@ class LocalLibraryDatabase {
   }
 
   /// 网络封面兜底落盘后更新作品封面（PRD §5.11 封面降级链第 3 级）。
+  /// 手动补录 RJ 号（未识别 RJ 作品，2026-09-02）。
+  Future<void> updateWorkRjCode(int workId, String rjCode) async {
+    await _db.update('works', {'rj_code': rjCode},
+        where: 'id = ?', whereArgs: [workId]);
+  }
+
   Future<void> updateWorkCover(int workId, String coverPath) async {
     await _db.update('works', {
       'cover_path': coverPath,

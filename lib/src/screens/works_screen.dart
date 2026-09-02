@@ -193,6 +193,12 @@ class _WorksScreenState extends State<WorksScreen> {
               icon: const Icon(Icons.folder_open),
               label: const Text('选择扫描根目录'),
             ),
+            const SizedBox(height: UiSpacing.small),
+            TextButton.icon(
+              onPressed: _showScanGuide,
+              icon: const Icon(Icons.help_outline, size: 18),
+              label: const Text('如何准备音频文件与文件夹？'),
+            ),
           ],
         ),
       ),
@@ -369,6 +375,57 @@ class _WorksScreenState extends State<WorksScreen> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => WorkDetailScreen(work: work),
+      ),
+    );
+  }
+
+
+  /// 本地识别规则引导（2026-09-02 用户需求：引导命名/无 RJ 处理）。
+  void _showScanGuide() {
+    final scheme = Theme.of(context).colorScheme;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('本地音频识别规则'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('推荐结构（任意层级可嵌套）：',
+                  style: TextStyle(fontWeight: FontWeight.w600,
+                      color: scheme.primary, fontSize: 14)),
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  '扫描根/\n'
+                  '  ├ RJ123456 作品标题/          ← 文件夹带 RJ 号\n'
+                  '  │   ├ 01_track.mp3\n'
+                  '  │   ├ cover.jpg               ← 封面（可选）\n'
+                  '  │   └ track.lrc / track.srt   ← 歌词/字幕（可选）\n'
+                  '  └ 非 RJ 文件夹/               ← 无 RJ 也能入库\n'
+                  '      └ song.mp3（文件夹名作标题）',
+                  style: TextStyle(fontSize: 12, height: 1.6, fontFamily: 'monospace'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text('带 RJ 号文件夹：自动识别并拉取社团/CV/封面/评论。', style: TextStyle(fontSize: 13)),
+              const SizedBox(height: 4),
+              const Text('无 RJ 的音频/文件夹：以文件夹名或文件名作标题入本地库，标注「未识别 RJ」；'
+                  '打开作品后可点「填写 RJ」手动补录，补录后同样能拉取网络元数据。', style: TextStyle(fontSize: 13)),
+              const SizedBox(height: 8),
+              const Text('支持音频格式：mp3 / m4a / flac / wav / ogg / opus / aac / wma', style: TextStyle(fontSize: 13)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('知道了')),
+        ],
       ),
     );
   }

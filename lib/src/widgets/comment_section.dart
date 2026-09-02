@@ -1,7 +1,9 @@
-/// DLsite/asmr.one 作品评论区（详情页，默认收起，2026-09-02 用户需求）。
+/// DLsite/asmr.one 评论区（详情页「评论」标题行 → 底部抽屉全列表）。
 ///
-/// 数据源：asmr.one /api/review/{workId}（需登录；游客显示登录提示）。
-/// 评论可单条翻译为中文（免费翻译服务）。
+/// 2026-09-02 用户需求：评论多时不要撑长主页面——评论区改为
+/// DraggableScrollableSheet 底部抽屉（上拉展开/下拉收起），主页面
+/// 相关推荐等内容不再被长评论列表挤到很远。评论可单条翻译为中文
+/// （译/原切换，抽屉内独立滚动，不影响主页布局）。
 library;
 
 import 'package:flutter/material.dart';
@@ -18,7 +20,7 @@ class CommentSection extends StatefulWidget {
   /// asmr.one 作品数字 id（RJ 号数字部分）。
   final int workId;
 
-  /// DLsite RJ 号（本地作品直接可用；DLsite 评论直抓用，2026-09-02）。
+  /// DLsite RJ 号（本地/在线 sourceId；DLsite 评论直抓用）。
   final String? rjCode;
 
   @override
@@ -26,73 +28,156 @@ class CommentSection extends StatefulWidget {
 }
 
 class _CommentSectionState extends State<CommentSection> {
-  bool _expanded = false;
-  bool _loading = false;
-  String? _error;
-  List<Map<String, dynamic>> _reviews = const [];
-  final Map<String, String> _translations = {};
+  List<Map<String, dynamic>>? _cached;
+  String? _status; // 空态/错误描述。
 
-  Future<void> _load() async {
-    if (_loading) return;
-    setState(() => _loading = true);
+  /// 拉取评论（asmr.one → DLsite；结果缓存到打开抽屉）。
+  Future<List<Map<String, dynamic>>?> _fetch() async {
     try {
       final mirror = context.read<MirrorProvider>();
-      // 1) asmr.one 端点轮询（走已登录镜像）。
       final reviews = await mirror.fetchWorkReviews(widget.workId);
-      if (reviews != null && reviews.isNotEmpty) {
-        if (!mounted) return;
-        setState(() {
-          _reviews = reviews;
-          _error = null;
-          _loading = false;
-        });
-        return;
-      }
-      // 2) asmr.one 无评论 → DLsite 直抓（本地作品有 RJ 号时）。
+      if (reviews != null && reviews.isNotEmpty) return reviews;
       final rj = widget.rjCode;
       if (rj != null && rj.isNotEmpty) {
         final meta = context.read<NetMetaService>();
         final dlsite = await meta.fetchDlsiteReviews(rj);
         if (dlsite.isNotEmpty) {
-          if (!mounted) return;
-          setState(() {
-            _reviews = [
-              for (final r in dlsite)
-                <String, dynamic>{
-                  'name': r.name,
-                  'rating': r.rating,
-                  'comment': r.comment,
-                  'date': r.date,
-                  'title': r.title,
-                  'source': 'DLsite',
-                },
-            ];
-            _error = null;
-            _loading = false;
-          });
-          return;
+          return [
+            for (final r in dlsite)
+              <String, dynamic>{
+                'name': r.name,
+                'rating': r.rating,
+                'comment': r.comment,
+                'date': r.date,
+                'title': r.title,
+                'source': 'DLsite',
+              },
+          ];
         }
+        final diag = NetMetaService.lastReviewDiag;
+        _status = 'DLsite 未抓到评论（诊断: $diag）';
+        return const [];
       }
-      if (!mounted) return;
-      final diag = NetMetaService.lastReviewDiag;
-      setState(() {
-        _reviews = const [];
-        _error = rj != null
-            ? 'DLsite 未抓到评论\n诊断: $diag'
-            : null;
-        _loading = false;
-      });
+      _status = '暂无评论';
+      return const [];
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = '$e';
-        _loading = false;
-      });
+      _status = '加载失败：$e';
+      return const [];
     }
   }
 
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final count = _cached?.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 标题行：点击打开抽屉。
+        InkWell(
+          onTap: () => _openSheet(),
+          borderRadius: BorderRadius.circular(UiRadii.list),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: UiSpacing.small),
+            child: Row(
+              children: [
+                Icon(Icons.reviews_outlined,
+                    size: 18, color: scheme.primary),
+                const SizedBox(width: UiSpacing.small),
+                Text('评论',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w500, fontSize: 18)),
+                if (count != null) ...[
+                  const SizedBox(width: UiSpacing.xSmall),
+                  Text('$count',
+                      style: TextStyle(
+                          fontSize: 13, color: scheme.primary)),
+                ],
+                const Spacer(),
+                Icon(Icons.unfold_more, color: scheme.onSurfaceVariant),
+              ],
+            ),
+          ),
+        ),
+        // 已加载摘要（首条评论预览，帮助用户判断是否要看）。
+        if (_cached != null && _cached!.isNotEmpty)
+          Padding(
+            padding:
+                const EdgeInsets.only(left: 2, bottom: UiSpacing.small),
+            child: Text(
+              '${_cached!.first['name'] ?? ''}'
+              '${(_cached!.first['rating'] as int?) != null ? ' ★${_cached!.first['rating']}' : ''}'
+              '：${(_cached!.first['comment'] as String? ?? '').replaceAll('\n', ' ')}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: 13, color: scheme.onSurfaceVariant, height: 1.4),
+            ),
+          ),
+        if (_status != null && (_cached == null || _cached!.isEmpty))
+          Padding(
+            padding:
+                const EdgeInsets.only(left: 2, bottom: UiSpacing.small),
+            child: Text('$_status · 点击重试',
+                style:
+                    TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _openSheet() async {
+    final data = _cached ?? await _fetch();
+    if (!mounted) return;
+    setState(() {
+      _cached = data;
+      _status = _status;
+    });
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      showDragHandle: true,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) => _CommentSheetBody(
+          reviews: _cached ?? const [],
+          status: _status,
+          scrollController: scrollController,
+        ),
+      ),
+    );
+    // 抽屉关闭后若有摘要变化刷新标题行计数。
+    if (mounted) setState(() {});
+  }
+}
+
+/// 抽屉内的完整评论列表（内部滚动 + 每条译/原切换）。
+class _CommentSheetBody extends StatefulWidget {
+  const _CommentSheetBody({
+    required this.reviews,
+    required this.status,
+    required this.scrollController,
+  });
+
+  final List<Map<String, dynamic>> reviews;
+  final String? status;
+  final ScrollController scrollController;
+
+  @override
+  State<_CommentSheetBody> createState() => _CommentSheetBodyState();
+}
+
+class _CommentSheetBodyState extends State<_CommentSheetBody> {
+  final Map<String, String> _translations = {};
+
   Future<void> _translate(Map<String, dynamic> review) async {
-    final key = '${review['id'] ?? review['time']}';
+    final key = '${review['date'] ?? ''}_${(review['comment'] as String?)?.length}';
     final comment = (review['comment'] as String?) ?? '';
     if (comment.isEmpty || _translations.containsKey(key)) return;
     final result = await TranslationService.translate(comment);
@@ -104,118 +189,57 @@ class _CommentSectionState extends State<CommentSection> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final mirror = context.watch<MirrorProvider>();
-    final loggedIn =
-        mirror.currentUser != null || mirror.hasAnyLogin;
-
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 收起态标题行（点击展开）。
-        InkWell(
-          onTap: () {
-            setState(() => _expanded = !_expanded);
-            if (_expanded && _reviews.isEmpty && _error == null) {
-              _load();
-            }
-          },
-          borderRadius: BorderRadius.circular(UiRadii.list),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: UiSpacing.small),
-            child: Row(
-              children: [
-                Icon(Icons.reviews_outlined,
-                    size: 18, color: scheme.onSurfaceVariant),
-                const SizedBox(width: UiSpacing.small),
-                Text('评论',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.w500, fontSize: 18)),
-                if (_reviews.isNotEmpty) ...[
-                  const SizedBox(width: UiSpacing.xSmall),
-                  Text('${_reviews.length}',
-                      style: TextStyle(
-                          fontSize: 13, color: scheme.onSurfaceVariant)),
-                ],
-                const Spacer(),
-                Icon(
-                    _expanded ? Icons.expand_less : Icons.expand_more,
-                    color: scheme.onSurfaceVariant),
-              ],
-            ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+              UiSpacing.large, 0, UiSpacing.large, UiSpacing.small),
+          child: Row(
+            children: [
+              Text('评论（${widget.reviews.length}）',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Text('上拉/下拉调整高度 · 点击右上收起',
+                  style: TextStyle(
+                      fontSize: 11, color: scheme.onSurfaceVariant)),
+            ],
           ),
         ),
-        if (_expanded)
-          _loading
-              ? const Padding(
-                  padding: EdgeInsets.all(UiSpacing.medium),
-                  child: Center(
-                      child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child:
-                              CircularProgressIndicator(strokeWidth: 2))),
+        Expanded(
+          child: widget.reviews.isEmpty
+              ? Center(
+                  child: Text(widget.status ?? '暂无评论',
+                      style: TextStyle(
+                          color: scheme.onSurfaceVariant, fontSize: 13)),
                 )
-              : !loggedIn
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: UiSpacing.small),
-                      child: Text(
-                        '登录后可查看评论（设置 → 服务器与账号）',
-                        style: TextStyle(
-                            fontSize: 13, color: scheme.onSurfaceVariant),
-                      ),
-                    )
-                  : _error != null
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: UiSpacing.small),
-                          child: Text('评论加载失败：$_error',
-                              style: TextStyle(
-                                  fontSize: 13, color: scheme.error)),
-                        )
-                      : _reviews.isEmpty
-                          ? Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: UiSpacing.small),
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _error ?? '暂无评论',
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        color: scheme.onSurfaceVariant),
-                                  ),
-                                  TextButton.icon(
-                                    onPressed: _load,
-                                    icon: const Icon(Icons.refresh,
-                                        size: 16),
-                                    label: const Text('重新拉取'),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : Column(
-                              children: [
-                                for (final review in _reviews.take(20))
-                                  _ReviewTile(
-                                    review: review,
-                                    translated: _translations[
-                                        '${review['id'] ?? review['time']}'],
-                                    onTranslate: () => _translate(review),
-                                  ),
-                              ],
-                            ),
+              : ListView.builder(
+                  controller: widget.scrollController,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: UiSpacing.large, vertical: UiSpacing.small),
+                  itemCount: widget.reviews.length,
+                  itemBuilder: (context, index) {
+                    final review = widget.reviews[index];
+                    final key =
+                        '${review['date'] ?? ''}_${(review['comment'] as String?)?.length}';
+                    final translated = _translations[key];
+                    return _SheetReviewTile(
+                      review: review,
+                      translated: translated,
+                      onTranslate: () => _translate(review),
+                    );
+                  },
+                ),
+        ),
       ],
     );
   }
 }
 
-class _ReviewTile extends StatelessWidget {
-  const _ReviewTile(
+class _SheetReviewTile extends StatelessWidget {
+  const _SheetReviewTile(
       {required this.review, this.translated, required this.onTranslate});
 
   final Map<String, dynamic> review;
@@ -231,6 +255,7 @@ class _ReviewTile extends StatelessWidget {
     final title = (review['title'] as String?) ?? '';
     final date = (review['date'] as String?) ?? '';
     final source = (review['source'] as String?) ?? '';
+    final isChinese = TranslationService.isMostlyChinese(comment);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: UiSpacing.small),
@@ -240,73 +265,95 @@ class _ReviewTile extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Row(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Flexible(
-                        child: Text(name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500))),
+                    Text(name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w500)),
                     if (rating != null) ...[
                       const SizedBox(width: UiSpacing.xSmall),
                       Text('★$rating',
                           style: TextStyle(
                               fontSize: 12,
-                              color: scheme.primary,
+                              color: Colors.amber.shade700,
                               fontWeight: FontWeight.w600)),
+                    ],
+                    if (source.isNotEmpty) ...[
+                      const SizedBox(width: UiSpacing.xSmall),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                            color: scheme.secondaryContainer,
+                            borderRadius: BorderRadius.circular(4)),
+                        child: Text(source,
+                            style: TextStyle(
+                                fontSize: 9,
+                                color: scheme.onSecondaryContainer)),
+                      ),
                     ],
                   ],
                 ),
               ),
-              if (comment.isNotEmpty &&
-                  !TranslationService.isMostlyChinese(comment))
+              if (comment.isNotEmpty && !isChinese)
                 IconButton(
-                  onPressed: onTranslate,
-                  icon: translated != null
-                      ? Icon(Icons.g_translate,
-                          size: 16, color: scheme.primary)
-                      : Icon(Icons.g_translate,
-                          size: 16, color: scheme.onSurfaceVariant),
+                  onPressed: translated != null ? () {} : onTranslate,
+                  icon: Icon(
+                      translated != null
+                          ? Icons.translate
+                          : Icons.g_translate,
+                      size: 16,
+                      color: translated != null
+                          ? scheme.primary
+                          : scheme.onSurfaceVariant),
                   tooltip: '翻译评论',
                   visualDensity: VisualDensity.compact,
                 ),
             ],
           ),
           if (title.isNotEmpty)
-            Text(
-              '「$title」',
-              style: const TextStyle(
-                  fontSize: 14, fontWeight: FontWeight.w600, height: 1.4),
-              maxLines: null,
-            ),
+            Text('「$title」',
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    height: 1.4)),
+          // 原文。
           if (comment.isNotEmpty)
             Text(
               comment,
-              style: const TextStyle(fontSize: 14, height: 1.45),
-              maxLines: null,
+              style: const TextStyle(fontSize: 14, height: 1.5),
+              maxLines: translated != null ? 3 : null,
+              overflow: translated != null
+                  ? TextOverflow.ellipsis
+                  : TextOverflow.visible,
             ),
-          if (date.isNotEmpty || source.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                [if (date.isNotEmpty) date, if (source.isNotEmpty) source]
-                    .join(' · '),
-                style: TextStyle(
-                    fontSize: 11, color: scheme.onSurfaceVariant),
-              ),
-            ),
+          // 译文：可收起（点击切回原文区域自动收）——译文本身全显示。
           if (translated != null) ...[
-            const SizedBox(height: UiSpacing.xSmall),
+            const Divider(height: UiSpacing.small),
             Text(
               translated!,
               style: TextStyle(
-                  fontSize: 13, height: 1.45, color: scheme.primary),
+                  fontSize: 14, height: 1.5, color: scheme.primary),
               maxLines: null,
             ),
           ],
-          const Divider(height: UiSpacing.small),
+          if (date.isNotEmpty || translated != null)
+            Row(
+              children: [
+                if (date.isNotEmpty)
+                  Text(date,
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: scheme.onSurfaceVariant)),
+                const Spacer(),
+                if (translated != null)
+                  Text('已译', style: TextStyle(fontSize: 11, color: scheme.primary)),
+              ],
+            ),
+          const Divider(height: UiSpacing.large),
         ],
       ),
     );

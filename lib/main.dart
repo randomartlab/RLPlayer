@@ -56,6 +56,50 @@ Future<void> main() async {
   runApp(KikoLocalApp(handler: handler));
 }
 
+/// 全局路由深度观察者（被 MaterialApp 引用）。
+final _RouteDepthObserver _routeObserver = _RouteDepthObserver();
+
+/// 记录根导航器路由深度（主页之上有无二级页面）。
+/// 全局迷你条据此只在二级页面显示（主页用自己的迷你条防重复）。
+class _RouteDepthObserver extends NavigatorObserver {
+  final ValueNotifier<int> depth = ValueNotifier<int>(0);
+
+  /// 路由变化后的二次通知版本号：didPush 后延迟触发一次，
+  /// 让新页面 initState（如播放页 active=true）完成后全局条重新判断。
+  final ValueNotifier<int> version = ValueNotifier<int>(0);
+
+  void _bump() {
+    depth.value = depth.value; // 触发同值监听也可行——改用 version。
+  }
+
+  @override
+  void didPush(Route route, Route? previousRoute) {
+    depth.value++;
+    version.value++;
+    Future<void>.delayed(const Duration(milliseconds: 500), () {
+      version.value++;
+    });
+    super.didPush(route, previousRoute);
+  }
+
+  @override
+  void didPop(Route route, Route? previousRoute) {
+    depth.value = depth.value > 0 ? depth.value - 1 : 0;
+    version.value++;
+    Future<void>.delayed(const Duration(milliseconds: 500), () {
+      version.value++;
+    });
+    super.didPop(route, previousRoute);
+  }
+
+  @override
+  void didRemove(Route route, Route? previousRoute) {
+    depth.value = depth.value > 0 ? depth.value - 1 : 0;
+    version.value++;
+    super.didRemove(route, previousRoute);
+  }
+}
+
 class KikoLocalApp extends StatelessWidget {
   const KikoLocalApp({super.key, required this.handler});
 
@@ -139,6 +183,7 @@ class KikoLocalApp extends StatelessWidget {
 
                 return _NetMetaBackfillScheduler(
                   child: MaterialApp(
+                    navigatorObservers: [_routeObserver],
                     title: 'RLPlayer',
                   debugShowCheckedModeBanner: false,
                   // 全局字体缩放（用户设置，叠加系统缩放；上限 2.0 与 PRD §4.7 一致）。
@@ -406,11 +451,22 @@ class _GlobalMiniPlayerState extends State<_GlobalMiniPlayer>
 
   @override
   Widget build(BuildContext context) {
-    final audio = context.watch<AudioPlayerProvider>();
-    final hasTrack = audio.currentTrack != null;
-    if (!hasTrack || AudioPlayerScreen.active) {
-      return const SizedBox.shrink();
-    }
-    return const MiniPlayer();
+    // 监听路由版本 + 播放页开关信号；音频状态 builder 内现取。
+    return ValueListenableBuilder<int>(
+      valueListenable: _routeObserver.version,
+      builder: (context, _, _) => ValueListenableBuilder<int>(
+        valueListenable: audioPlayerActiveSignal,
+        builder: (context, _, _) {
+          final depth = _routeObserver.depth.value;
+          final audio = context.read<AudioPlayerProvider>();
+          final hasTrack = audio.currentTrack != null;
+          final playerOn = AudioPlayerScreen.active;
+          if (depth <= 0 || !hasTrack || playerOn) {
+            return const SizedBox.shrink();
+          }
+          return const MiniPlayer();
+        },
+      ),
+    );
   }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart' show LoopMode;
@@ -23,6 +24,10 @@ import '../widgets/player/playlist_dialog.dart';
 /// M1 范围：大封面（0.4 屏高）、进度条（带时间气泡）、基础控制、
 /// 歌词视图与 **seek 联动**、沉浸锁定模式。
 /// 倍速 / 循环 / 睡眠定时 / 播放队列 / 悬浮字幕随 M5 补齐。
+/// 播放页开关信号：initState/dispose 变化时 bump，
+/// 供全局迷你条即时重判（2026-09-02：静态 active 无法触发重建）。
+final ValueNotifier<int> audioPlayerActiveSignal = ValueNotifier<int>(0);
+
 class AudioPlayerScreen extends StatefulWidget {
   const AudioPlayerScreen({super.key});
 
@@ -66,6 +71,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
   void initState() {
     super.initState();
     AudioPlayerScreen.active = true;
+    audioPlayerActiveSignal.value++;
     _prefSubtitleDefault =
         context.read<PreferencesProvider>().subtitleDefault;
     if (_prefSubtitleDefault) _showLyrics = true;
@@ -86,6 +92,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
   @override
   void dispose() {
     AudioPlayerScreen.active = false;
+    audioPlayerActiveSignal.value++;
     _coverLyricPageController.dispose();
 
     _positionSub?.cancel();

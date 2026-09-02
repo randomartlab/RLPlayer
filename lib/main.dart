@@ -59,40 +59,75 @@ Future<void> main() async {
 /// 全局路由深度观察者（被 MaterialApp 引用）。
 final _RouteDepthObserver _routeObserver = _RouteDepthObserver();
 
-/// 记录根导航器路由深度（主页之上有无二级页面）。
-/// 全局迷你条据此只在二级页面显示（主页用自己的迷你条防重复）。
+/// 记录根导航器真实路由栈（主页之上有无二级页面）。
+///
+/// 用「真实栈」而非计数器：didPush/didPop/didRemove/didReplace/didShow
+/// 全量维护，任何路径（含系统返回/手势）都不会产生 depth 残留——
+/// 修复实机反馈 2026-09-02：切页面后出现两个迷你条（计数器多计导致
+/// 主页 overlay 条与自带条共存）。
 class _RouteDepthObserver extends NavigatorObserver {
+  final List<Route<dynamic>> _stack = <Route<dynamic>>[];
+
+  /// 栈深度（0 = 只有主页）。
   final ValueNotifier<int> depth = ValueNotifier<int>(0);
 
-  /// 路由变化后的二次通知版本号：didPush 后延迟触发一次，
+  /// 路由变化通知：push/pop 立即触发一次，500ms 后再触发一次，
   /// 让新页面 initState（如播放页 active=true）完成后全局条重新判断。
   final ValueNotifier<int> version = ValueNotifier<int>(0);
 
-  @override
-  void didPush(Route route, Route? previousRoute) {
-    depth.value++;
+  /// 路由变化后的全局条刷新入口。
+  void _notify() {
+    depth.value = _stack.isEmpty ? 0 : _stack.length - 1;
     version.value++;
+  }
+
+  void _notifyDelayed() {
     Future<void>.delayed(const Duration(milliseconds: 500), () {
       version.value++;
     });
-    super.didPush(route, previousRoute);
   }
 
   @override
-  void didPop(Route route, Route? previousRoute) {
-    depth.value = depth.value > 0 ? depth.value - 1 : 0;
-    version.value++;
-    Future<void>.delayed(const Duration(milliseconds: 500), () {
-      version.value++;
-    });
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (_stack.isNotEmpty && identical(_stack.last, route)) {
+      _stack.removeLast();
+    } else {
+      _stack.remove(route);
+    }
+    _notify();
+    _notifyDelayed();
     super.didPop(route, previousRoute);
   }
 
   @override
-  void didRemove(Route route, Route? previousRoute) {
-    depth.value = depth.value > 0 ? depth.value - 1 : 0;
-    version.value++;
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _stack.remove(route);
+    _notify();
+    _notifyDelayed();
     super.didRemove(route, previousRoute);
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (oldRoute != null) {
+      final i = _stack.indexOf(oldRoute);
+      if (i >= 0 && newRoute != null) {
+        _stack[i] = newRoute;
+      }
+    } else if (newRoute != null) {
+      _stack.add(newRoute);
+    }
+    _notify();
+    _notifyDelayed();
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _stack.add(route);
+    _notify();
+    _notifyDelayed();
+    super.didPush(route, previousRoute);
   }
 }
 

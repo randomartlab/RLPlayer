@@ -202,7 +202,10 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
 
   /// M11 网络参考信息（PRD §5.5：本地信息优先，网络参考只补充显示在下方独立区块）。
   Future<void> _loadNetMeta({bool forceRefresh = false}) async {
-    final rjCode = widget.work.rjCode;
+    // 优先取补录后的覆盖对象（手动填写 RJ 后 widget.work 仍旧，
+    // 实机反馈 2026-09-02：补录后不拉取）。
+    final effective = _workOverride ?? widget.work;
+    final rjCode = effective.rjCode;
     if (rjCode == null) return; // 未识别 RJ 的作品无参考信息。
     // 偏好开关：网络元数据关闭时不拉取（PRD 验收：关开关后零请求）。
     if (!forceRefresh &&
@@ -239,7 +242,8 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
   Future<void> _loadOnlineRelated() async {
     try {
       final mirror = context.read<MirrorProvider>();
-      final numeric = int.tryParse((widget.work.rjCode ?? '')
+      final effective = _workOverride ?? widget.work;
+      final numeric = int.tryParse((effective.rjCode ?? '')
           .replaceFirst(RegExp('^(RJ|BJ|VJ)', caseSensitive: false), ''));
       if (numeric == null) return;
       final detail = await mirror.api.getWork(numeric);
@@ -297,8 +301,20 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     if (mounted && fresh != null) {
       setState(() => _workOverride = fresh);
     }
-    // 拉取元数据/封面。
+    // 拉取元数据/封面 + 在线相关推荐；完成后反馈。
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('已保存 RJ：$rj，正在拉取网络信息…'),
+          duration: const Duration(seconds: 2)));
+    }
     await _loadNetMeta(forceRefresh: true);
+    unawaited(_loadOnlineRelated());
+    if (!mounted) return;
+    final again =
+        await context.read<LibraryProvider>().reloadWork(widget.work.id);
+    if (mounted && again != null) {
+      setState(() => _workOverride = again);
+    }
   }
 
   /// 按节点精确定位播放（实机 bug 修复：视觉序号 ≠ DB 序号导致点任何

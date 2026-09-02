@@ -202,9 +202,12 @@ class _CommentSheetBodyState extends State<_CommentSheetBody> {
                       .titleMedium
                       ?.copyWith(fontWeight: FontWeight.w600)),
               const Spacer(),
-              Text('上拉/下拉调整高度 · 点击右上收起',
-                  style: TextStyle(
-                      fontSize: 11, color: scheme.onSurfaceVariant)),
+              IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close),
+                tooltip: '收起',
+                visualDensity: VisualDensity.compact,
+              ),
             ],
           ),
         ),
@@ -257,12 +260,20 @@ class _SheetReviewTile extends StatelessWidget {
     final source = (review['source'] as String?) ?? '';
     final isChinese = TranslationService.isMostlyChinese(comment);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: UiSpacing.small),
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(UiRadii.list),
+        border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: 0.2)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Wrap(
@@ -314,46 +325,62 @@ class _SheetReviewTile extends StatelessWidget {
                 ),
             ],
           ),
+          const SizedBox(height: 4),
           if (title.isNotEmpty)
             Text('「$title」',
                 style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 14.5,
                     fontWeight: FontWeight.w600,
-                    height: 1.4)),
-          // 原文。
+                    height: 1.45)),
+          // 原文（翻译后收起为 4 行，保留上下文）。
           if (comment.isNotEmpty)
-            Text(
-              comment,
-              style: const TextStyle(fontSize: 14, height: 1.5),
-              maxLines: translated != null ? 3 : null,
-              overflow: translated != null
-                  ? TextOverflow.ellipsis
-                  : TextOverflow.visible,
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                comment,
+                style: const TextStyle(
+                    fontSize: 14, height: 1.6, letterSpacing: 0.1),
+                maxLines: translated != null ? 4 : null,
+                overflow: translated != null
+                    ? TextOverflow.ellipsis
+                    : TextOverflow.visible,
+              ),
             ),
-          // 译文：可收起（点击切回原文区域自动收）——译文本身全显示。
+          // 译文块：独立底色卡片样式，突出显示。
           if (translated != null) ...[
-            const Divider(height: UiSpacing.small),
-            Text(
-              translated!,
-              style: TextStyle(
-                  fontSize: 14, height: 1.5, color: scheme.primary),
-              maxLines: null,
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: scheme.tertiaryContainer.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(UiRadii.control),
+              ),
+              child: Text(
+                translated!,
+                style: const TextStyle(
+                    fontSize: 14, height: 1.65, letterSpacing: 0.1),
+                maxLines: null,
+              ),
             ),
           ],
-          if (date.isNotEmpty || translated != null)
-            Row(
-              children: [
-                if (date.isNotEmpty)
-                  Text(date,
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: scheme.onSurfaceVariant)),
-                const Spacer(),
-                if (translated != null)
-                  Text('已译', style: TextStyle(fontSize: 11, color: scheme.primary)),
-              ],
-            ),
-          const Divider(height: UiSpacing.large),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              if (date.isNotEmpty)
+                Text(date,
+                    style: TextStyle(
+                        fontSize: 11, color: scheme.onSurfaceVariant)),
+              const Spacer(),
+              if (translated != null)
+                Text('译文',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: scheme.tertiary,
+                        fontWeight: FontWeight.w600)),
+            ],
+          ),
         ],
       ),
     );

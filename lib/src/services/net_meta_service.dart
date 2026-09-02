@@ -20,6 +20,8 @@ import '../providers/mirror_provider.dart';
 /// 未命中/超时 → DLsite 仅兜底一次 → 不可达则静默不显示（无重试无弹窗）。
 /// 串行队列 + 最多 2 并发，避免扫描万级库时请求风暴。
 class NetMetaService {
+  /// 最近一次 DLsite 评论抓取的诊断（CommentSection 空态展示用）。
+  static String lastReviewDiag = '';
   NetMetaService({required this.mirror, required this.db});
 
   final MirrorProvider mirror;
@@ -183,7 +185,7 @@ class NetMetaService {
           'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Mobile Safari/537.36',
       'Accept': 'application/json',
       // R18 age 确认 + 语言/货币（作品页/评论区需成人 cookie）。
-      'Cookie': 'age_check=1; is_over18=1; locale=zh-cn',
+      'Cookie': 'adultchecked=1; age_check=1; is_over18=1; locale=zh-cn',
       'Referer': 'https://www.dlsite.com/maniax/',
     },
     validateStatus: (status) => status != null && status < 500,
@@ -212,31 +214,56 @@ class NetMetaService {
 
   /// 抓取 DLsite 作品页评论（真实浏览器可达环境下有效；
   /// 2026-09-02：asmr.one 不镜像评论正文，改用 DLsite 直抓）。
-  Future<List<DlsiteReview>> fetchDlsiteReviews(String rjCode) async {
+  Future<List<DlsiteReview>> fetchDlsiteReviews(String rjCode,
+      {int limit = 30}) async {
     try {
       await _applyDlsiteProxy();
-      // 评论 DOM 采样自桌面版页面；必须用桌面 UA（手机 UA 返回
-      // 移动版 DOM 结构不同，实机反馈 2026-09-02：能连 DLsite 但 0 条）。
+      // DLsite 官方评论 API（dlsite-rs 同款；2026-09-02 实测可用）：
+      // /maniax/api/review?product_id=..&limit=..&page=..&order=regist_d
+      // 页面评论为 Vue AJAX 渲染，SSR HTML 无评论节点（HTML 抓取不可行）。
       final response = await _dlsiteDio.get(
-        'https://www.dlsite.com/maniax/work/=/product_id/$rjCode.html',
+        'https://www.dlsite.com/maniax/api/review',
+        queryParameters: {
+          'product_id': rjCode,
+          'limit': limit,
+          'mix_pickup': false,
+          'page': 1,
+          'order': 'regist_d',
+          'locale': 'ja_JP',
+        },
         options: Options(headers: {
           'User-Agent':
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                   '(KHTML, like Gecko) Chrome/126.0 Safari/537.36',
         }),
       );
-      final htmlText = response.data;
-      if (htmlText is! String || htmlText.isEmpty) {
-        debugPrint('[DlsiteReview] $rjCode 空响应 status=${response.statusCode}');
+      final data = response.data;
+      if (data is! Map || data['is_success'] != true) {
+        lastReviewDiag = 'api 非成功: ${response.statusCode}';
+        debugPrint('[DlsiteReview] $rjCode $lastReviewDiag');
         return const [];
       }
-      final reviews = parseDlsiteReviewsHtml(htmlText);
-      debugPrint('[DlsiteReview] $rjCode 抓到 ${reviews.length} 条 '
-          '(status=${response.statusCode}, len=${htmlText.length}, '
-          'hasReviewBlock=${htmlText.contains('review_inner')})');
+      final list = (data['review_list'] as List?) ?? const [];
+      final reviews = <DlsiteReview>[];
+      for (final item in list) {
+        if (item is! Map) continue;
+        final text = (item['review_text'] as String?) ?? '';
+        if (text.isEmpty && (item['review_title'] ?? '') == null) continue;
+        reviews.add(DlsiteReview(
+          name: (item['nick_name'] as String?) ?? '',
+          rating: int.tryParse((item['rate'] ?? '').toString()),
+          date: (item['regist_date'] as String?)?.split(' ').first,
+          title: (item['review_title'] as String?) ?? '',
+          comment: text,
+        ));
+      }
+      lastReviewDiag = 'api ok found=${reviews.length} '
+          '(total=${(data['total_count'] ?? data['review_total'] ?? '?')})';
+      debugPrint('[DlsiteReview] $rjCode $lastReviewDiag');
       return reviews;
     } catch (e) {
-      debugPrint('[DlsiteReview] $rjCode 抓取失败: $e');
+      lastReviewDiag = 'exception: $e';
+      debugPrint('[DlsiteReview] $rjCode $lastReviewDiag');
       return const [];
     }
   }

@@ -74,9 +74,12 @@ class _CommentSectionState extends State<CommentSection> {
         }
       }
       if (!mounted) return;
+      final diag = NetMetaService.lastReviewDiag;
       setState(() {
         _reviews = const [];
-        _error = rj != null ? 'DLsite 未抓到评论（可能网络/IP 限制）' : null;
+        _error = rj != null
+            ? 'DLsite 未抓到评论\n诊断: $diag'
+            : null;
         _loading = false;
       });
     } catch (e) {

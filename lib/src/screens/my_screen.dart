@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/library_provider.dart';
@@ -47,15 +48,11 @@ class MyScreen extends StatelessWidget {
                           ?.copyWith(color: scheme.onSurfaceVariant),
                     ),
                   )
-                : GridView.builder(
+                : MasonryGridView.count(
                     key: const PageStorageKey('my_library_grid'),
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 210,
-                      childAspectRatio: 0.72,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                    ),
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
                     padding: const EdgeInsets.all(UiSpacing.medium),
                     itemCount: works.length,
                     itemBuilder: (context, index) => EnhancedWorkCard(

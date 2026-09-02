@@ -14,6 +14,7 @@ import '../providers/library_provider.dart';
 import '../providers/mirror_provider.dart';
 import '../providers/online_provider.dart';
 import '../utils/ui_tokens.dart';
+import '../widgets/comment_section.dart';
 import '../widgets/translation_toggle_button.dart';
 import 'audio_player_screen.dart';
 import 'package:kiko_local/src/services/translation_service.dart';
@@ -67,10 +68,19 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
       _fileTreeTranslating = true;
       _fileTreeShowTranslation = true;
     });
+    // 收集键与显示键严格一致（音频行显示去扩展名——此前批量翻译用
+    // 完整名作键导致查询永远 miss，实机反馈 2026-09-02「拿到数据
+    // 不显示」根因）。
     final names = <String>[];
     void collect(List<OnlineFileNode> nodes) {
       for (final n in nodes) {
-        names.add(n.title);
+        if (n.isFolder) {
+          names.add(n.title);
+        } else if (n.isAudio) {
+          names.add(_stripExtension(n.title));
+        } else {
+          names.add(n.title);
+        }
         if (n.children.isNotEmpty) collect(n.children);
       }
     }
@@ -580,6 +590,9 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
                       ),
                     ],
                     const SizedBox(height: UiSpacing.large),
+                    // 评论区（默认收起；实机需求 2026-09-02）。
+                    CommentSection(workId: work.id),
+                    const SizedBox(height: UiSpacing.small),
                     // 文件树（流播入口）+ 文件名翻译切换（kikoflu 同款）。
                     Row(
                       children: [

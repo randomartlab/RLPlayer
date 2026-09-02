@@ -15,7 +15,9 @@ import 'src/providers/preferences_provider.dart';
 import 'src/providers/theme_mode.dart';
 import 'src/providers/theme_provider.dart';
 import 'src/providers/ui_settings_provider.dart';
+import 'src/screens/audio_player_screen.dart';
 import 'src/screens/main_screen.dart';
+import 'src/widgets/mini_player.dart';
 import 'src/services/audio_player_service.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'src/services/download_service.dart';
@@ -151,7 +153,19 @@ class KikoLocalApp extends StatelessWidget {
                         textScaler:
                             TextScaler.linear(scaled.clamp(0.5, 2.0)),
                       ),
-                      child: child!,
+                      // 全局迷你播放条（2026-09-02 实机需求：任何页面
+                      // 一键返回正在播放页；播放页自身隐藏）。
+                      child: Stack(
+                        children: [
+                          if (child != null) Positioned.fill(child: child),
+                          const Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: _GlobalMiniPlayer(),
+                          ),
+                        ],
+                      ),
                     );
                   },
                   theme: AppTheme.lightTheme(
@@ -353,5 +367,50 @@ class _NetMetaBackfillSchedulerState extends State<_NetMetaBackfillScheduler> {
       });
     }
     return widget.child;
+  }
+}
+
+
+/// 全局迷你播放条宿主：有播放且不在播放页时显示。
+class _GlobalMiniPlayer extends StatefulWidget {
+  const _GlobalMiniPlayer();
+
+  @override
+  State<_GlobalMiniPlayer> createState() => _GlobalMiniPlayerState();
+}
+
+class _GlobalMiniPlayerState extends State<_GlobalMiniPlayer>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 路由变化时重建（检测播放页入栈/出栈）。
+    final modal = ModalRoute.of(context);
+    // ignore: unnecessary_statements
+    modal != null;
+    // 订阅路由变化：用 NavigatorObserver 代价高，此处依赖
+    // audioProvider 通知 + 周期重建即可（播放页切换必然伴随状态变化）。
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final audio = context.watch<AudioPlayerProvider>();
+    final hasTrack = audio.currentTrack != null;
+    if (!hasTrack || AudioPlayerScreen.active) {
+      return const SizedBox.shrink();
+    }
+    return const MiniPlayer();
   }
 }

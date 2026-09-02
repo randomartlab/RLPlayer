@@ -90,6 +90,7 @@ class _FileTreeViewState extends State<FileTreeView> {
               node: node,
               depth: _depthOf(node),
               expanded: _expandedDirs.contains(node.relativePath),
+              displayName: widget.displayName,
               onToggle: () => setState(() {
                 if (_expandedDirs.contains(node.relativePath)) {
                   _expandedDirs.remove(node.relativePath);
@@ -120,7 +121,11 @@ class _DirectoryRow extends StatelessWidget {
     required this.depth,
     required this.expanded,
     required this.onToggle,
+    this.displayName,
   });
+
+  /// 目录名显示函数（译文切换；null = 原文）。
+  final String Function(String original)? displayName;
 
   final FileNode node;
   final int depth;
@@ -150,7 +155,7 @@ class _DirectoryRow extends StatelessWidget {
             const SizedBox(width: UiSpacing.medium),
             Expanded(
               child: Text(
-                node.name,
+                displayName?.call(node.name) ?? node.name,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w500,
                     fontSize: 20,

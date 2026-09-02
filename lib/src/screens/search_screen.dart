@@ -114,7 +114,231 @@ class _SearchScreenState extends State<SearchScreen> {
     ('标签', Icons.label_outline),
     ('社团', Icons.group_outlined),
     ('声优', Icons.mic_outlined),
+    // 组合搜索（AND/并集交互组件，2026-09-02 用户需求——替代 $-词$ 指令）。
+    ('组合', Icons.manage_search),
   ];
+
+  // ---- 组合搜索状态 ----
+  /// 条目：(条件类型索引, 值, 是否排除)。
+  final List<(int, String, bool)> _comboConditions = [];
+  /// true = 全部满足（AND）；false = 任一满足（OR）。
+  bool _comboAnd = true;
+
+  Future<void> _runComboSearch() async {
+    if (_comboConditions.isEmpty) {
+      setState(() {
+        _results = const [];
+        _searched = false;
+      });
+      return;
+    }
+    final library = context.read<LibraryProvider>();
+    final db = library.database;
+    final result = <Work>[];
+    for (final work in library.works) {
+      // 每个条件的命中判断。
+      Future<bool> match((int, String, bool) cond) async {
+        final (type, rawValue, exclude) = cond;
+        final value = rawValue.toLowerCase();
+        bool hit = switch (type) {
+          1 => (work.rjCode?.toLowerCase().contains(value) ?? false),
+          2 => work.tags.any((t) => t.toLowerCase().contains(value)),
+          3 => (work.circleName?.toLowerCase().contains(value) ?? false),
+          4 => work.vasNames.any((v) => v.toLowerCase().contains(value)),
+          _ => work.title.toLowerCase().contains(value),
+        };
+        if (!hit && db != null && work.rjCode != null) {
+          final meta = await db.queryNetMeta(work.rjCode!);
+          if (meta != null) {
+            hit = switch (type) {
+              2 => meta.netTags
+                  .any((t) => t.toLowerCase().contains(value)),
+              3 => (meta.netCircle?.toLowerCase().contains(value) ?? false),
+              4 => meta.netVas
+                  .any((v) => v.toLowerCase().contains(value)),
+              _ => (meta.netTitle?.toLowerCase().contains(value) ?? false),
+            };
+          }
+        }
+        // 排除条件：命中即视为不满足。
+        return exclude ? !hit : hit;
+      }
+
+      final matches =
+          await Future.wait(_comboConditions.map(match));
+      final ok = _comboAnd
+          ? matches.every((m) => m)
+          : matches.any((m) => m);
+      if (ok) result.add(work);
+    }
+    if (mounted) {
+      setState(() {
+        _results = result;
+        _searched = true;
+      });
+    }
+  }
+
+  /// 组合条件构建器弹层。
+  Future<void> _showComboBuilder() async {
+    final library = context.read<LibraryProvider>();
+    await library.warmNetMetas();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          final scheme = Theme.of(sheetContext).colorScheme;
+          // 候选聚合（与实时候选同源）。
+          final candidates = <String>{};
+          for (final w in library.works) {
+            candidates
+              ..add(w.title)
+              ..addAll(w.vasNames)
+              ..addAll(w.tags);
+            if (w.circleName != null) candidates.add(w.circleName!);
+            final meta = library.netMetaOf(w);
+            if (meta != null) {
+              candidates
+                ..addAll(meta.netVas)
+                ..addAll(meta.netTags);
+              if (meta.netCircle != null) candidates.add(meta.netCircle!);
+            }
+          }
+          return DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.7,
+            builder: (_, __) => Padding(
+              padding: const EdgeInsets.all(UiSpacing.large),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Text('组合搜索',
+                          style: Theme.of(sheetContext)
+                              .textTheme
+                              .titleMedium),
+                      const Spacer(),
+                      // AND / OR 切换。
+                      SegmentedButton<bool>(
+                        segments: const [
+                          ButtonSegment(value: true, label: Text('全部满足')),
+                          ButtonSegment(value: false, label: Text('任一满足')),
+                        ],
+                        selected: {_comboAnd},
+                        onSelectionChanged: (v) {
+                          setSheetState(() => _comboAnd = v.first);
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: UiSpacing.medium),
+                  // 已加条件 chips。
+                  Wrap(
+                    spacing: UiSpacing.small,
+                    runSpacing: UiSpacing.xSmall,
+                    children: [
+                      for (var i = 0; i < _comboConditions.length; i++)
+                        InputChip(
+                          avatar: Icon(
+                            _comboConditions[i].$3
+                                ? Icons.block
+                                : Icons.check,
+                            size: 14,
+                            color: _comboConditions[i].$3
+                                ? scheme.error
+                                : scheme.primary,
+                          ),
+                          label: Text(
+                              '${_conditions[_comboConditions[i].$1].$1}:${_comboConditions[i].$2}'),
+                          onDeleted: () {
+                            setSheetState(
+                                () => _comboConditions.removeAt(i));
+                          },
+                        ),
+                    ],
+                  ),
+                  const Divider(height: UiSpacing.large),
+                  // 快速添加：类型选择 + 候选列表（点选即加条件）。
+                  Expanded(
+                    child: DefaultTabController(
+                      length: 5,
+                      child: Column(
+                        children: [
+                          TabBar(
+                            isScrollable: true,
+                            tabs: [
+                              for (final c in _conditions.take(5))
+                                Tab(text: c.$1),
+                            ],
+                          ),
+                          Expanded(
+                            child: TabBarView(
+                              children: [
+                                for (var t = 0; t < 5; t++)
+                                  ListView(
+                                    children: [
+                                      for (final cand in candidates
+                                          .where((c) => c.isNotEmpty)
+                                          .take(200)
+                                          .toList()
+                                        ..sort())
+                                        ListTile(
+                                          dense: true,
+                                          title: Text(cand,
+                                              maxLines: 1,
+                                              overflow:
+                                                  TextOverflow.ellipsis),
+                                          trailing: PopupMenuButton<String>(
+                                            onSelected: (mode) {
+                                              setSheetState(() =>
+                                                  _comboConditions.add((
+                                                    t,
+                                                    cand,
+                                                    mode == 'exclude',
+                                                  )));
+                                            },
+                                            itemBuilder: (_) => const [
+                                              PopupMenuItem(
+                                                  value: 'include',
+                                                  child: Text('添加（满足）')),
+                                              PopupMenuItem(
+                                                  value: 'exclude',
+                                                  child: Text('添加（排除）')),
+                                            ],
+                                          ),
+                                          onTap: () {
+                                            setSheetState(() =>
+                                                _comboConditions.add(
+                                                    (t, cand, false)));
+                                          },
+                                        ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: UiSpacing.medium),
+                  FilledButton(
+                    onPressed: () {
+                      Navigator.of(sheetContext).pop();
+                      _runComboSearch();
+                    },
+                    child: const Text('搜索'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   /// 搜索历史（最近 10 条，PRD 验收要求）。
   List<String> _history = const [];
@@ -350,7 +574,11 @@ class _SearchScreenState extends State<SearchScreen> {
                         selected: _conditionType == i,
                         onSelected: (_) {
                           setState(() => _conditionType = i);
-                          _search();
+                          if (i == 5) {
+                            _showComboBuilder();
+                          } else {
+                            _search();
+                          }
                         },
                         visualDensity: VisualDensity.compact,
                       ),
@@ -467,6 +695,64 @@ class _SearchScreenState extends State<SearchScreen> {
                     conditionType: _conditionType,
                     query: _query,
                   )
+                : _conditionType == 5
+                    ? Column(
+                        children: [
+                          if (_comboConditions.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: UiSpacing.medium,
+                                  vertical: UiSpacing.xSmall),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Wrap(
+                                      spacing: UiSpacing.xSmall,
+                                      runSpacing: UiSpacing.xSmall,
+                                      children: [
+                                        for (final c in _comboConditions)
+                                          Chip(
+                                            label: Text(
+                                                '${_conditions[c.$1].$1}:${c.$2}',
+                                                style:
+                                                    const TextStyle(fontSize: 11)),
+                                            visualDensity: VisualDensity.compact,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        _showComboBuilder(),
+                                    child: const Text('编辑'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          Expanded(
+                            child: _results.isNotEmpty
+                                ? ListView.builder(
+                                    itemCount: _results.length,
+                                    itemBuilder: (context, index) =>
+                                        EnhancedWorkCard(
+                                      work: _results[index],
+                                      size: WorkCardSize.list,
+                                      onTap: () => _openDetail(
+                                          context, _results[index]),
+                                    ),
+                                  )
+                                : Center(
+                                    child: Text(
+                                      _comboConditions.isEmpty
+                                          ? '点「编辑」组合搜索条件'
+                                          : '没有满足条件的作品',
+                                      style: TextStyle(
+                                          color: scheme.onSurfaceVariant),
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      )
                 : _results.isNotEmpty
                     ? ListView.builder(
                         key: const PageStorageKey('search_results'),

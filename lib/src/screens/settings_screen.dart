@@ -180,10 +180,25 @@ class SettingsScreen extends StatelessWidget {
               ListTile(
                 leading:
                     _LeadingIcon(icon: Icons.palette_outlined, context: context),
-                title: const Text('配色方案'),
-                subtitle: Text(_schemeLabel(
-                    themeSettings.settings.colorSchemeType)),
-                onTap: () => _showSchemePicker(context),
+                title: const Text('主题'),
+                // 10 款预设主题下拉（实机需求 2026-09-02；
+                // 液态玻璃设置已移除）。
+                trailing: DropdownButton<ColorSchemeType>(
+                  value: themeSettings.settings.colorSchemeType,
+                  items: [
+                    for (final type in ColorSchemeType.values)
+                      DropdownMenuItem(
+                        value: type,
+                        child: Text(_schemeLabel(type),
+                            style: const TextStyle(fontSize: 14)),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      themeSettings.setColorSchemeType(value);
+                    }
+                  },
+                ),
               ),
               ListTile(
                 leading: _LeadingIcon(
@@ -217,53 +232,6 @@ class SettingsScreen extends StatelessWidget {
                 trailing: Text(
                     '${(uiSettings.lyricFontScale * 100).toInt()}%'),
               ),
-            ],
-          ),
-          const SizedBox(height: UiSpacing.medium),
-          _SettingsCard(
-            title: '导航样式',
-            children: [
-              ListTile(
-                leading: _LeadingIcon(
-                    icon: Icons.blur_on_outlined, context: context),
-                title: const Text('液态玻璃导航栏'),
-                subtitle: const Text('胶囊形玻璃导航（Android 模糊降级）'),
-                trailing: Switch(
-                  value: uiSettings.useLiquidGlass,
-                  onChanged: (value) => uiSettings.setNavStyle(
-                    value ? NavStyle.liquidGlass : NavStyle.classic,
-                  ),
-                ),
-              ),
-              if (uiSettings.useLiquidGlass) ...[
-                ListTile(
-                  leading: _LeadingIcon(
-                      icon: Icons.tune_outlined, context: context),
-                  title: const Text('玻璃强度'),
-                  subtitle: Slider(
-                    value: uiSettings.glassIntensity,
-                    min: 0.2,
-                    max: 1.0,
-                    divisions: 8,
-                    label: uiSettings.glassIntensity.toStringAsFixed(1),
-                    onChanged: uiSettings.setGlassIntensity,
-                  ),
-                ),
-                ListTile(
-                  leading: _LeadingIcon(
-                      icon: Icons.gradient_outlined, context: context),
-                  title: const Text('模糊模式'),
-                  trailing: SegmentedButton<GlassBlurMode>(
-                    segments: const [
-                      ButtonSegment(value: GlassBlurMode.clear, label: Text('清晰')),
-                      ButtonSegment(value: GlassBlurMode.hazy, label: Text('朦胧')),
-                    ],
-                    selected: {uiSettings.glassBlurMode},
-                    onSelectionChanged: (selection) =>
-                        uiSettings.setGlassBlurMode(selection.first),
-                  ),
-                ),
-              ],
             ],
           ),
         ],
@@ -340,6 +308,16 @@ class SettingsScreen extends StatelessWidget {
         return '薰衣草紫';
       case ColorSchemeType.sakuraPink:
         return '樱花粉';
+      case ColorSchemeType.inkBlack:
+        return '墨玉黑';
+      case ColorSchemeType.roseGold:
+        return '玫瑰金';
+      case ColorSchemeType.tealMint:
+        return '青碧薄荷';
+      case ColorSchemeType.amberHoney:
+        return '琥珀蜜黄';
+      case ColorSchemeType.deepSpace:
+        return '深空紫夜';
       case ColorSchemeType.dynamic:
         return '动态取色（Android 12+）';
     }

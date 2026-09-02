@@ -232,6 +232,22 @@ class KikoeruApiService {
           .compareTo((a['count'] as num?) ?? 0));
   }
 
+  /// 作品评论（需登录 token；游客返回 null，2026-09-02）。
+  Future<List<Map<String, dynamic>>?> getWorkReviews(int workId,
+      {int page = 1, int pageSize = 20}) async {
+    if (_token == null || _token!.isEmpty) return null;
+    final response = await _dio.get('/api/review/$workId',
+        queryParameters: {'page': page, 'pageSize': pageSize});
+    final data = response.data;
+    final list = data is Map
+        ? (data['reviews'] as List? ?? const [])
+        : (data as List? ?? const []);
+    return list
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+  }
+
   /// 声优的全部作品（搜索按 CV 选取后检索）。
   Future<List<OnlineWork>> getVaWorks(String vaId,
       {int pageSize = 20}) async {

@@ -364,16 +364,14 @@ class _CompactCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: AspectRatio(
-                aspectRatio: WorkCardVariant.compactCoverRatio,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    WorkCover(work: work),
-                    _RjBadge(text: work.rjCode ?? '本地'),
-                  ],
-                ),
+            AspectRatio(
+              aspectRatio: WorkCardVariant.compactCoverRatio,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  WorkCover(work: work),
+                  _RjBadge(text: work.rjCode ?? '本地'),
+                ],
               ),
             ),
             if (!hideText) ...[

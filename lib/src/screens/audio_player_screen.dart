@@ -26,6 +26,9 @@ import '../widgets/player/playlist_dialog.dart';
 class AudioPlayerScreen extends StatefulWidget {
   const AudioPlayerScreen({super.key});
 
+  /// 当前是否有播放页实例在栈顶（全局迷你条据此隐藏自身，2026-09-02）。
+  static bool active = false;
+
   @override
   State<AudioPlayerScreen> createState() => _AudioPlayerScreenState();
 }
@@ -40,6 +43,10 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
   StreamSubscription<Duration>? _positionSub;
 
   bool _showLyrics = false;
+
+  /// 封面↔歌词 PageView 控制器（左右滑动互切）。
+  late final PageController _coverLyricPageController = PageController(
+      initialPage: _prefSubtitleDefault ? 1 : 0);
   bool _immersive = false;
 
   /// 偏好：默认显示字幕（打开播放器直接进歌词/字幕视图）。
@@ -58,6 +65,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
   @override
   void initState() {
     super.initState();
+    AudioPlayerScreen.active = true;
     _prefSubtitleDefault =
         context.read<PreferencesProvider>().subtitleDefault;
     if (_prefSubtitleDefault) _showLyrics = true;
@@ -77,6 +85,9 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
 
   @override
   void dispose() {
+    AudioPlayerScreen.active = false;
+    _coverLyricPageController.dispose();
+
     _positionSub?.cancel();
     for (final sub in _durationSubs) {
       sub.cancel();
@@ -249,27 +260,31 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
-            child: AnimatedSwitcher(
-              duration: UiMotion.primary,
-              child: _showLyrics
-                  ? LyricView(
-                      key: const ValueKey('lyrics'),
-                      controller: _lyricController,
-                      positionStream: audio.positionStream,
-                      seekEventStream: audio.seekEvents,
-                      onSeekTo: (position) =>
-                          unawaited(audio.seek(position)),
-                    )
-                  : KeyedSubtree(
-                      key: const ValueKey('cover'),
-                      child: Center(
-                        child: _buildCover(
-                          context,
-                          track,
-                          maxHeight: MediaQuery.sizeOf(context).height * 0.4,
-                        ),
-                      ),
+            // 封面 ↔ 歌词：左右滑动互切 + 页指示点（实机需求 2026-09-02；
+            // 此前歌词视图点按无响应导致切不回封面）。
+            child: PageView(
+              controller: _coverLyricPageController,
+              onPageChanged: (page) =>
+                  setState(() => _showLyrics = page == 1),
+              children: [
+                KeyedSubtree(
+                  key: const ValueKey('cover'),
+                  child: Center(
+                    child: _buildCover(
+                      context,
+                      track,
+                      maxHeight: MediaQuery.sizeOf(context).height * 0.4,
                     ),
+                  ),
+                ),
+                LyricView(
+                  key: const ValueKey('lyrics'),
+                  controller: _lyricController,
+                  positionStream: audio.positionStream,
+                  seekEventStream: audio.seekEvents,
+                  onSeekTo: (position) => unawaited(audio.seek(position)),
+                ),
+              ],
             ),
           ),
           // 标题区：本地音轨名自适应换行完整显示（PRD §4.7：无 ellipsis）。
@@ -369,7 +384,14 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
     }
 
     return GestureDetector(
-      onTap: () => setState(() => _showLyrics = !_showLyrics),
+      onTap: () {
+        setState(() => _showLyrics = !_showLyrics);
+        _coverLyricPageController.animateToPage(
+          _showLyrics ? 1 : 0,
+          duration: UiMotion.primary,
+          curve: Curves.easeOutCubic,
+        );
+      },
       onLongPress: () => setState(() => _immersive = true),
       child: Hero(
         tag: 'audio_player_artwork_${track?.id ?? 'none'}',

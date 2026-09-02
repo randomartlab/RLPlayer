@@ -17,6 +17,8 @@ import '../providers/audio_provider.dart';
 import '../providers/library_provider.dart';
 import '../utils/playback_helpers.dart';
 import '../utils/ui_tokens.dart';
+import '../widgets/comment_section.dart';
+import '../widgets/work_status_bar.dart';
 import '../widgets/translation_toggle_button.dart';
 import 'subtitle_preview_screen.dart';
 import '../widgets/enhanced_work_card.dart';
@@ -399,6 +401,9 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           ],
           const SizedBox(height: UiSpacing.small),
 
+          // ②+ 作品状态条（想听/在听/听过/评分，2026-09-02）。
+          if (work.rjCode != null) WorkStatusBar(rjCode: work.rjCode!),
+
           // ③ 本地文件信息（RJ 号、文件数、总时长、本地路径）。
           _InfoRow(label: work.rjCode ?? '未识别 RJ 号', icon: Icons.tag),
           const SizedBox(height: UiSpacing.xSmall),
@@ -608,6 +613,17 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
                 showAddToPlaylistDialog(context, work, node),
             displayName: _fileTreeDisplayName,
           ),
+
+          // ⑩+ 评论区（DLsite/asmr.one，默认收起；实机需求 2026-09-02）。
+          if (work.rjCode != null) ...[
+            Builder(builder: (context) {
+              final numeric = int.tryParse(work.rjCode!
+                  .replaceAll(RegExp(r'[^0-9]'), ''));
+              if (numeric == null) return const SizedBox.shrink();
+              return CommentSection(workId: numeric);
+            }),
+            const SizedBox(height: UiSpacing.small),
+          ],
 
           // ⑪ 推荐位：本地同社团在前 + asmr.one 同社团网络推荐补充
           // （用户需求 2026-09-01：有 RJ 且能拉到信息的作品拉网络推荐）。

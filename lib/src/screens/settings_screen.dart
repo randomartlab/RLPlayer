@@ -85,19 +85,18 @@ class SettingsScreen extends StatelessWidget {
                 leading: _LeadingIcon(
                     icon: Icons.vpn_lock_outlined, context: context),
                 title: const Text('DLsite 代理'),
-                subtitle: const Text(
-                    '仅对 DLsite 元数据请求生效（如 127.0.0.1:7890）；留空直连'),
-                trailing: SizedBox(
-                  width: 150,
-                  child: TextField(
-                    controller: TextEditingController(
-                        text: prefs.dlsiteProxy),
-                    decoration: const InputDecoration(
-                        hintText: 'host:port', isDense: true),
-                    style: const TextStyle(fontSize: 13),
-                    onSubmitted: (v) => prefs.setDlsiteProxy(v),
-                    onChanged: (v) => prefs.setDlsiteProxy(v),
+                // 输入框放 subtitle 独立行整宽（实机反馈 2026-09-02：
+                // trailing 150dp 大字体挤占；留空 = 直连）。
+                subtitle: TextField(
+                  controller:
+                      TextEditingController(text: prefs.dlsiteProxy),
+                  decoration: const InputDecoration(
+                    hintText: 'host:port（如 127.0.0.1:7890），留空直连',
+                    isDense: true,
+                    border: OutlineInputBorder(),
                   ),
+                  onSubmitted: (v) => prefs.setDlsiteProxy(v),
+                  onChanged: (v) => prefs.setDlsiteProxy(v),
                 ),
               ),
               ListTile(
@@ -216,16 +215,16 @@ class SettingsScreen extends StatelessWidget {
                 leading:
                     _LeadingIcon(icon: Icons.palette_outlined, context: context),
                 title: const Text('主题'),
-                // 10 款预设主题下拉（实机需求 2026-09-02；
-                // 液态玻璃设置已移除）。
-                trailing: DropdownButton<ColorSchemeType>(
+                // 下拉放 subtitle 独立行整宽（实机反馈 2026-09-02：
+                // trailing 挤占左侧，大字体不适配）。
+                subtitle: DropdownButton<ColorSchemeType>(
                   value: themeSettings.settings.colorSchemeType,
+                  isExpanded: true,
                   items: [
                     for (final type in ColorSchemeType.values)
                       DropdownMenuItem(
                         value: type,
-                        child: Text(_schemeLabel(type),
-                            style: const TextStyle(fontSize: 14)),
+                        child: Text(_schemeLabel(type)),
                       ),
                   ],
                   onChanged: (value) {

@@ -235,7 +235,11 @@ class NetMetaService {
       if (workJson == null) return null;
 
       final workName = (workJson['work_name'] ?? '') as String;
-      if (workName.isEmpty) return null;
+      final makerName = ((workJson['maker_name'] ?? '') as String)
+          .trim();
+      // work_name 或社团名至少一个存在才入库（2026-09-02：部分作品
+      // ajax 对当前地区裁剪字段——标题缺失时用社团名保留可展示信息）。
+      if (workName.isEmpty && makerName.isEmpty) return null;
 
       // CV/标签从 dlite 的 genres/authors 结构提取。
       final vas = ((workJson['authors'] ?? const []) as List)
@@ -253,8 +257,8 @@ class NetMetaService {
       return NetMeta(
         rjCode: rjCode,
         workId: numeric,
-        netTitle: workName,
-        netCircle: ((workJson['maker_name'] ?? '') as String),
+        netTitle: workName.isEmpty ? null : workName,
+        netCircle: makerName.isEmpty ? null : makerName,
         netVas: vas,
         netTags: tags,
         netDescription: null,

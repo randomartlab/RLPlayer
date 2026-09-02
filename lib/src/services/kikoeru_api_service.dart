@@ -233,19 +233,28 @@ class KikoeruApiService {
   }
 
   /// 作品评论（需登录 token；游客返回 null，2026-09-02）。
+  ///
+  /// asmr.one 对「无评论/未收录」作品返回 404——按空列表处理而不是报错
+  /// （实机反馈 2026-09-02：登录后展开评论区抛 DioException 404）。
   Future<List<Map<String, dynamic>>?> getWorkReviews(int workId,
       {int page = 1, int pageSize = 20}) async {
     if (_token == null || _token!.isEmpty) return null;
-    final response = await _dio.get('/api/review/$workId',
-        queryParameters: {'page': page, 'pageSize': pageSize});
-    final data = response.data;
-    final list = data is Map
-        ? (data['reviews'] as List? ?? const [])
-        : (data as List? ?? const []);
-    return list
-        .whereType<Map>()
-        .map((m) => Map<String, dynamic>.from(m))
-        .toList();
+    try {
+      final response = await _dio.get('/api/review/$workId',
+          queryParameters: {'page': page, 'pageSize': pageSize});
+      final data = response.data;
+      final list = data is Map
+          ? (data['reviews'] as List? ?? const [])
+          : (data as List? ?? const []);
+      return list
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
+    } on DioException catch (e) {
+      // 404 = 该作品无评论 / 无收录，按空列表返回。
+      if (e.response?.statusCode == 404) return const [];
+      rethrow;
+    }
   }
 
   /// 声优的全部作品（搜索按 CV 选取后检索）。

@@ -215,12 +215,25 @@ class NetMetaService {
   Future<List<DlsiteReview>> fetchDlsiteReviews(String rjCode) async {
     try {
       await _applyDlsiteProxy();
+      // 评论 DOM 采样自桌面版页面；必须用桌面 UA（手机 UA 返回
+      // 移动版 DOM 结构不同，实机反馈 2026-09-02：能连 DLsite 但 0 条）。
       final response = await _dlsiteDio.get(
-          'https://www.dlsite.com/maniax/work/=/product_id/$rjCode.html');
+        'https://www.dlsite.com/maniax/work/=/product_id/$rjCode.html',
+        options: Options(headers: {
+          'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                  '(KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+        }),
+      );
       final htmlText = response.data;
-      if (htmlText is! String || htmlText.isEmpty) return const [];
+      if (htmlText is! String || htmlText.isEmpty) {
+        debugPrint('[DlsiteReview] $rjCode 空响应 status=${response.statusCode}');
+        return const [];
+      }
       final reviews = parseDlsiteReviewsHtml(htmlText);
-      debugPrint('[DlsiteReview] $rjCode 抓到 ${reviews.length} 条');
+      debugPrint('[DlsiteReview] $rjCode 抓到 ${reviews.length} 条 '
+          '(status=${response.statusCode}, len=${htmlText.length}, '
+          'hasReviewBlock=${htmlText.contains('review_inner')})');
       return reviews;
     } catch (e) {
       debugPrint('[DlsiteReview] $rjCode 抓取失败: $e');

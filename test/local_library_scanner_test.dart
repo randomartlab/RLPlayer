@@ -18,7 +18,18 @@ void main() {
   File makeFile(String path, [String content = 'x']) {
     final file = File('${tempDir.path}/$path');
     file.parent.createSync(recursive: true);
-    file.writeAsStringSync(content);
+    final isImage = RegExp(
+            r'\.(png|jpg|jpeg|webp|gif|bmp|avif)[\s\S]*')
+        .hasMatch(path.toLowerCase());
+    if (isImage) {
+      // 图片写真魔数（封面魔数校验 2026-09-02）。
+      final magic = path.toLowerCase().endsWith('.png')
+          ? [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+          : [0xFF, 0xD8, 0xFF, 0xE0];
+      file.writeAsBytesSync(magic + List.filled(500, 0));
+    } else {
+      file.writeAsStringSync(content);
+    }
     return file;
   }
 

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -93,6 +94,15 @@ void main() {
   });
 
   group('pickLocalCover（封面 5 级降级链，本地部分）', () {
+    // 真实临时 PNG 文件（封面魔数校验 2026-09-02 需要可读文件）。
+    final _tmp = Directory.systemTemp.createTempSync('cover_rules');
+    String _img(String name) {
+      final path = _tmp.path + '/' + name.replaceAll('/', '_');
+      final f = File(path)..createSync(recursive: true);
+      f.writeAsBytesSync(
+          [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] + List.filled(100, 0));
+      return path;
+    }
     CoverCandidate candidate(
       String name, {
       int size = 1000,
@@ -101,19 +111,20 @@ void main() {
     }) =>
         CoverCandidate(
           relativePath: name,
-          absolutePath: '/work/$name',
+          absolutePath: _img(name),
           baseName: name.split('.').first.toLowerCase(),
           sizeBytes: size,
           depth: depth,
           sameNameAsAudio: sameName,
         );
 
+
     test('优先级 1：cover/folder 命名优先', () {
       final picked = pickLocalCover([
         candidate('cover.jpg', size: 100),
         candidate('big_image.png', size: 99999),
       ]);
-      expect(picked, '/work/cover.jpg');
+      expect(picked, _img('cover.jpg'));
     });
 
     test('优先级 1：中文/日文封面命名（用户确认逻辑）', () {
@@ -121,19 +132,19 @@ void main() {
         candidate('封面1.png', size: 100),
         candidate('big_image.jpg', size: 99999),
       ]);
-      expect(picked, '/work/封面1.png');
+      expect(picked, _img('封面1.png'));
 
       final picked2 = pickLocalCover([
         candidate('表紙.jpg', size: 100),
         candidate('big_image.jpg', size: 99999),
       ]);
-      expect(picked2, '/work/表紙.jpg');
+      expect(picked2, _img('表紙.jpg'));
 
       final picked3 = pickLocalCover([
         candidate('カバー_02.png', size: 100),
         candidate('big_image.jpg', size: 99999),
       ]);
-      expect(picked3, '/work/カバー_02.png');
+      expect(picked3, _img('カバー_02.png'));
     });
 
     test('优先级 1：精确命名 > 包含命名', () {
@@ -141,7 +152,7 @@ void main() {
         candidate('cover.jpg', size: 100),
         candidate('my_cover_2.png', size: 99999),
       ]);
-      expect(picked, '/work/cover.jpg');
+      expect(picked, _img('cover.jpg'));
     });
 
     test('优先级 1 内：浅层优先', () {
@@ -149,7 +160,7 @@ void main() {
         candidate('sub/cover.jpg', depth: 1),
         candidate('cover.jpg', depth: 0),
       ]);
-      expect(picked, '/work/cover.jpg');
+      expect(picked, _img('cover.jpg'));
     });
 
     test('优先级 2：与音频同名 > 更大的无关图片', () {
@@ -157,7 +168,7 @@ void main() {
         candidate('01.jpg', size: 500, sameName: true),
         candidate('random.png', size: 99999),
       ]);
-      expect(picked, '/work/01.jpg');
+      expect(picked, _img('01.jpg'));
     });
 
     test('优先级 3：最大字节数', () {
@@ -165,7 +176,7 @@ void main() {
         candidate('a.jpg', size: 100),
         candidate('b.png', size: 99999),
       ]);
-      expect(picked, '/work/b.png');
+      expect(picked, _img('b.png'));
     });
 
     test('空候选返回 null', () {

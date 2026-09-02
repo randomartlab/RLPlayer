@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:charset/charset.dart' as charset;
 
@@ -215,39 +216,46 @@ class CoverCandidate {
 /// 返回 null 表示无本地图片文件 → 调用方继续走内嵌封面（4）/占位（5）。
 String? pickLocalCover(List<CoverCandidate> candidates) {
   if (candidates.isEmpty) return null;
+  // 剔除损坏图（魔数校验，2026-09-02：实机反馈封面不显示的一类根因
+  // 是扩展名正确但内容损坏/伪装，解码失败回退占位）。
+  final valid = candidates.where((c) => _hasImageMagic(c.absolutePath)).toList()
+    ..sort(_coverPriorityCompare);
+  if (valid.isNotEmpty) return valid.first.absolutePath;
+  return null;
+}
 
-  // 优先级 1：命名含封面关键词（中英日，用户确认 2026-09-01）。
-  // 两级匹配：精确等于 > 名字包含关键词；各层级内浅层优先、取大。
-  final exact = candidates
-      .where((c) => coverKeywords.contains(c.baseName))
-      .toList()
-    ..sort((a, b) {
-      final depth = a.depth.compareTo(b.depth);
-      if (depth != 0) return depth;
-      return a.sizeBytes.compareTo(b.sizeBytes);
-    });
-  if (exact.isNotEmpty) return exact.last.absolutePath;
+/// 图片魔数校验（JPEG/PNG/GIF/BMP/WEBP）。
+bool _hasImageMagic(String path) {
+  try {
+    final bytes = File(path).readAsBytesSync();
+    if (bytes.length < 12) return false;
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8) return true; // JPEG
+    if (bytes[0] == 0x89 && bytes[1] == 0x50) return true; // PNG
+    if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) return true; // GIF
+    if (bytes[0] == 0x42 && bytes[1] == 0x4D) return true; // BMP
+    if (bytes.length > 12 &&
+        bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 &&
+        bytes[11] == 0x50) return true; // WEBP（RIFF....WEBP）
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
 
-  final contains = candidates
-      .where((c) => coverKeywords
-          .any((kw) => c.baseName.contains(kw)))
-      .toList()
-    ..sort((a, b) {
-      final depth = a.depth.compareTo(b.depth);
-      if (depth != 0) return depth;
-      return a.sizeBytes.compareTo(b.sizeBytes);
-    });
-  if (contains.isNotEmpty) return contains.last.absolutePath;
-
-  // 优先级 2：与音频同名。
-  final sameName = candidates.where((c) => c.sameNameAsAudio).toList()
-    ..sort((a, b) => b.sizeBytes.compareTo(a.sizeBytes));
-  if (sameName.isNotEmpty) return sameName.first.absolutePath;
-
-  // 优先级 3：最大字节数。
-  final bySize = candidates.toList()
-    ..sort((a, b) => b.sizeBytes.compareTo(a.sizeBytes));
-  return bySize.first.absolutePath;
+/// 封面优先级比较（关键词精确 > 关键词包含 > 同名 > 大小；同级浅层优先）。
+int _coverPriorityCompare(CoverCandidate a, CoverCandidate b) {
+  int level(CoverCandidate c) {
+    if (coverKeywords.contains(c.baseName)) return 0;
+    if (coverKeywords.any((kw) => c.baseName.contains(kw))) return 1;
+    if (c.sameNameAsAudio) return 2;
+    return 3;
+  }
+  final la = level(a), lb = level(b);
+  if (la != lb) return la.compareTo(lb);
+  final depth = a.depth.compareTo(b.depth);
+  if (depth != 0) return depth;
+  // 同级：关键词级取大图，其余取大图。
+  return b.sizeBytes.compareTo(a.sizeBytes);
 }
 
 /// 文本编码嗅探：UTF-8 → Shift-JIS / GBK 评分选优（PRD §5.9.2）。

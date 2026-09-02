@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../models/work.dart';
+import '../providers/library_provider.dart';
+import 'package:provider/provider.dart';
 import '../utils/ui_tokens.dart';
 
 /// 作品卡片三变体（KikoFlu `enhanced_work_card.dart` 移植 + 本地化改造，
@@ -87,8 +89,28 @@ class WorkCover extends StatelessWidget {
           File(coverPath),
           fit: fit,
           cacheWidth: 640,
+          // 解码失败回退链（实机反馈 2026-09-02：本地封面图无法解码时
+          // 应显示网络封面而不是 RJ 号占位）。
           errorBuilder: (context, error, stackTrace) =>
-              _placeholder(scheme),
+              _networkFallback(context, scheme),
+        ),
+      );
+    }
+    return _networkFallback(context, scheme);
+  }
+
+  /// 网络封面兜底（NetMeta.netCoverUrl）；无网络数据 → 占位。
+  Widget _networkFallback(BuildContext context, ColorScheme scheme) {
+    final library = context.read<LibraryProvider>();
+    final meta = library.netMetaOf(work);
+    final url = meta?.netCoverUrl;
+    if (url != null && url.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: Image.network(
+          url,
+          fit: fit,
+          errorBuilder: (_, _, _) => _placeholder(scheme),
         ),
       );
     }

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -184,8 +185,47 @@ class NetMetaService {
     validateStatus: (status) => status != null && status < 500,
   ));
 
+  /// 按偏好设置 DLsite Dio 的代理（规则 VPN 用户修正直连失败，
+  /// 2026-09-02）。仅影响 DLsite 请求。
+  Future<void> _applyDlsiteProxy() async {
+    final prefs = await SharedPreferences.getInstance();
+    final proxy = prefs.getString('pref_dlsite_proxy') ?? '';
+    try {
+      _dlsiteDio.httpClientAdapter = IOHttpClientAdapter(
+        createHttpClient: () {
+          final client = HttpClient();
+          client.findProxy = (uri) => (proxy.isNotEmpty)
+              ? 'PROXY $proxy'
+              : 'DIRECT';
+          return client;
+        },
+      );
+    } catch (_) {
+      // 旧 Dio 无 adapter 时忽略（保持默认直连）。
+    }
+  }
+
+  /// DLsite 连通自检（设置页入口，2026-09-02）：返回可读结论。
+  Future<String> healthCheckDlsite() async {
+    try {
+      await _applyDlsiteProxy();
+      final sw = Stopwatch()..start();
+      final response = await _dlsiteDio.get(
+          'https://www.dlsite.com/maniax/product/info/ajax',
+          queryParameters: {'product_id': 'RJ01000000'});
+      sw.stop();
+      if (response.statusCode != null && response.statusCode! < 500) {
+        return 'DLsite 可达（${sw.elapsedMilliseconds}ms）';
+      }
+      return 'DLsite 返回异常（HTTP ${response.statusCode}）';
+    } catch (e) {
+      return 'DLsite 不可达：$e';
+    }
+  }
+
   Future<NetMeta?> _fetchFromDlsite(String rjCode, int numeric) async {
     try {
+      await _applyDlsiteProxy();
       final response = await _dlsiteDio.get(
           'https://www.dlsite.com/maniax/product/info/ajax',
           queryParameters: {'product_id': rjCode});

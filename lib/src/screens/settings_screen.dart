@@ -80,6 +80,41 @@ class SettingsScreen extends StatelessWidget {
                   onChanged: prefs.setWifiOnly,
                 ),
               ),
+              // DLsite 专用代理（2026-09-02：规则 VPN 直连失败修正）。
+              ListTile(
+                leading: _LeadingIcon(
+                    icon: Icons.vpn_lock_outlined, context: context),
+                title: const Text('DLsite 代理'),
+                subtitle: const Text(
+                    '仅对 DLsite 元数据请求生效（如 127.0.0.1:7890）；留空直连'),
+                trailing: SizedBox(
+                  width: 150,
+                  child: TextField(
+                    controller: TextEditingController(
+                        text: prefs.dlsiteProxy),
+                    decoration: const InputDecoration(
+                        hintText: 'host:port', isDense: true),
+                    style: const TextStyle(fontSize: 13),
+                    onSubmitted: (v) => prefs.setDlsiteProxy(v),
+                    onChanged: (v) => prefs.setDlsiteProxy(v),
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: _LeadingIcon(
+                    icon: Icons.network_check_outlined, context: context),
+                title: const Text('测试 DLsite 连接'),
+                subtitle: const Text('检查当前网络能否拉取 DLsite 元数据'),
+                onTap: () async {
+                  final meta = context.read<NetMetaService>();
+                  final result = await meta.healthCheckDlsite();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(result),
+                            duration: const Duration(seconds: 3)));
+                  }
+                },
+              ),
               ListTile(
                 leading: _LeadingIcon(
                     icon: Icons.subtitles_outlined, context: context),

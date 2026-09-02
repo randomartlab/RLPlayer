@@ -68,10 +68,6 @@ class _RouteDepthObserver extends NavigatorObserver {
   /// 让新页面 initState（如播放页 active=true）完成后全局条重新判断。
   final ValueNotifier<int> version = ValueNotifier<int>(0);
 
-  void _bump() {
-    depth.value = depth.value; // 触发同值监听也可行——改用 version。
-  }
-
   @override
   void didPush(Route route, Route? previousRoute) {
     depth.value++;

@@ -18,7 +18,11 @@ import 'online_work_detail_screen.dart';
 /// - 已下载作品角标 → 点击进入本地详情（M4 版）；未下载 → 在线详情；
 /// - 断网/失败错误态不崩溃（验收 #15）。
 class OnlineWorksScreen extends StatefulWidget {
-  const OnlineWorksScreen({super.key});
+  const OnlineWorksScreen({super.key, this.circleId, this.circleTitle});
+
+  /// 社团模式：传入则列出该社团全部作品（点社团名进入，用户需求 2026-09-02）。
+  final int? circleId;
+  final String? circleTitle;
 
   @override
   State<OnlineWorksScreen> createState() => _OnlineWorksScreenState();
@@ -30,10 +34,23 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
   final ScrollController _scrollController = ScrollController();
   _OnlineViewMode _viewMode = _OnlineViewMode.large;
 
+  // ---- 社团模式（点社团名进入；独立于全局 OnlineProvider）----
+  final List<OnlineWork> _circleWorks = [];
+  int _circlePage = 0;
+  bool _circleLoading = false;
+  bool _circleHasMore = true;
+  String? _circleError;
+  String _circleOrder = 'release';
+
+  bool get _isCircleMode => widget.circleId != null;
+
+  // order 实测可用值（2026-09-02）：release / rate_average_2dp / dl_count /
+  // price / review_count。'rating' 为无效值会返回空列表——已修正。
   static const _orders = [
     ('release', '发行日'),
-    ('rating', '评分'),
+    ('rate_average_2dp', '评分'),
     ('dl_count', '销量'),
+    ('review_count', '评价量'),
     ('price', '价格'),
   ];
 
@@ -41,10 +58,39 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    final online = context.read<OnlineProvider>();
-    if (online.works.isEmpty && !online.loading) {
-      unawaited(online.loadMore());
+    if (_isCircleMode) {
+      unawaited(_loadCircleMore());
+    } else {
+      final online = context.read<OnlineProvider>();
+      if (online.works.isEmpty && !online.loading) {
+        unawaited(online.loadMore());
+      }
     }
+  }
+
+  Future<void> _loadCircleMore() async {
+    if (_circleLoading || !_circleHasMore || !_isCircleMode) return;
+    setState(() => _circleLoading = true);
+    try {
+      final mirror = context.read<MirrorProvider>();
+      final works = await mirror.api.getCircleWorksPage(
+          widget.circleId!, _circlePage + 1,
+          order: _circleOrder);
+      _circleWorks.addAll(works);
+      _circleHasMore = works.length >= 20;
+      _circlePage++;
+      _circleError = null;
+    } catch (e) {
+      _circleError = '$e';
+    } finally {
+      if (mounted) setState(() => _circleLoading = false);
+    }
+  }
+
+  Future<void> _refreshCircle() async {
+    _circlePage = 0;
+    _circleHasMore = true;
+    await _loadCircleMore();
   }
 
   @override
@@ -58,7 +104,11 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 400) {
-      unawaited(context.read<OnlineProvider>().loadMore());
+      if (_isCircleMode) {
+        unawaited(_loadCircleMore());
+      } else {
+        unawaited(context.read<OnlineProvider>().loadMore());
+      }
     }
   }
 
@@ -67,11 +117,63 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
     final online = context.watch<OnlineProvider>();
     final mirror = context.watch<MirrorProvider>();
     final scheme = Theme.of(context).colorScheme;
-    // 首次进入加载书签状态（游客静默失败）。
-    if (!online.favoritesLoaded) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        online.loadFavorites();
-      });
+    if (!_isCircleMode) {
+      // 首次进入加载书签状态（游客静默失败）。
+      if (!online.favoritesLoaded) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          online.loadFavorites();
+        });
+      }
+    }
+
+    if (_isCircleMode) {
+      // 社团模式：标题 + 排序 + 列表（无分类 chips）。
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(UiSpacing.medium,
+                UiSpacing.xSmall, UiSpacing.medium, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.circleTitle ?? '社团作品',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w500),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  initialValue: _circleOrder,
+                  onSelected: (value) {
+                    setState(() => _circleOrder = value);
+                    _circlePage = 0;
+                    _circleHasMore = true;
+                    _circleWorks.clear();
+                    unawaited(_loadCircleMore());
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'release', child: Text('发行日')),
+                    PopupMenuItem(
+                        value: 'rate_average_2dp', child: Text('评分')),
+                    PopupMenuItem(value: 'dl_count', child: Text('销量')),
+                    PopupMenuItem(value: 'review_count', child: Text('评价量')),
+                    PopupMenuItem(value: 'price', child: Text('价格')),
+                  ],
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [Icon(Icons.sort), Text('排序')],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: _buildBody(context, online)),
+        ],
+      );
     }
 
     return Column(
@@ -183,6 +285,37 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
 
   Widget _buildBody(BuildContext context, OnlineProvider online) {
     final scheme = Theme.of(context).colorScheme;
+
+    // 社团模式：独立数据源渲染。
+    if (_isCircleMode) {
+      if (_circleError != null && _circleWorks.isEmpty) {
+        return Center(child: Text('加载失败：$_circleError'));
+      }
+      if (_circleWorks.isEmpty && _circleLoading) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return RefreshIndicator(
+        onRefresh: _refreshCircle,
+        child: MasonryGridView.count(
+          controller: _scrollController,
+          padding: const EdgeInsets.all(UiSpacing.small),
+          crossAxisCount: 2,
+          mainAxisSpacing: UiSpacing.small,
+          crossAxisSpacing: UiSpacing.small,
+          itemCount: _circleWorks.length + (_circleHasMore ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index >= _circleWorks.length) {
+              return const Padding(
+                padding: EdgeInsets.all(UiSpacing.large),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            return _OnlineWorkCard(
+                work: _circleWorks[index], mode: CardMode.medium);
+          },
+        ),
+      );
+    }
 
     // 错误态（断网/镜像不可达）：保留页面结构不崩溃（验收 #15）。
     if (online.error != null && online.works.isEmpty) {

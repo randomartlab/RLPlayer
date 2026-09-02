@@ -16,7 +16,7 @@ class LocalLibraryDatabase {
   LocalLibraryDatabase._(this._db);
 
   static const String _dbName = 'kiko_local.db';
-  static const int _dbVersion = 7;
+  static const int _dbVersion = 8;
 
   /// 全部迁移逻辑的单一来源（v1 之后每版增量；onCreate 与 onUpgrade 共用，
   /// 杜绝 schema 漂移——修复“全新安装缺列”致命 bug 2026-09-02）。
@@ -37,6 +37,8 @@ class LocalLibraryDatabase {
           net_release TEXT,
           net_rate_average REAL,
           net_rate_count INTEGER,
+          net_dl_count INTEGER,
+          net_review_count INTEGER,
           source TEXT NOT NULL,
           fetched_at INTEGER NOT NULL,
           no_result INTEGER NOT NULL DEFAULT 0
@@ -81,6 +83,17 @@ class LocalLibraryDatabase {
           'work_title TEXT, cover_path TEXT, sort_index INTEGER NOT NULL, '
           'FOREIGN KEY(playlist_id) REFERENCES playlists(id) '
           'ON DELETE CASCADE)');
+    }
+    if (oldVersion < 8) {
+      // v8: net_meta 销量/评论数（本地排序，2026-09-02）。
+      try {
+        await db.execute(
+            'ALTER TABLE net_meta ADD COLUMN net_dl_count INTEGER');
+      } catch (_) {}
+      try {
+        await db.execute(
+            'ALTER TABLE net_meta ADD COLUMN net_review_count INTEGER');
+      } catch (_) {}
     }
     if (oldVersion < 7) {
       // v7 自愈：修复历史上 onCreate 与 onUpgrade 漂移产生的坏库
@@ -379,6 +392,12 @@ class LocalLibraryDatabase {
 
   // ---- NetMeta 缓存（M11） ----
 
+  /// 全部 NetMeta（本地排序/筛选批量加载，2026-09-02）。
+  Future<List<NetMeta>> queryAllNetMeta() async {
+    final rows = await _db.query('net_meta');
+    return rows.map(_netMetaFromRow).toList();
+  }
+
   Future<NetMeta?> queryNetMeta(String rjCode) async {
     final rows = await _db.query('net_meta',
         where: 'rj_code = ?', whereArgs: [rjCode], limit: 1);
@@ -402,6 +421,8 @@ class LocalLibraryDatabase {
           'net_release': meta.netRelease?.toIso8601String(),
           'net_rate_average': meta.netRateAverage,
           'net_rate_count': meta.netRateCount,
+          'net_dl_count': meta.netDlCount,
+          'net_review_count': meta.netReviewCount,
           'source': meta.source,
           'fetched_at': meta.fetchedAt.millisecondsSinceEpoch,
           'no_result': meta.noResult ? 1 : 0,
@@ -431,6 +452,8 @@ class LocalLibraryDatabase {
       netRelease: DateTime.tryParse((row['net_release'] as String?) ?? ''),
       netRateAverage: row['net_rate_average'] as double?,
       netRateCount: row['net_rate_count'] as int?,
+      netDlCount: row['net_dl_count'] as int?,
+      netReviewCount: row['net_review_count'] as int?,
       source: row['source'] as String? ?? 'asmr_one',
       fetchedAt:
           DateTime.fromMillisecondsSinceEpoch(row['fetched_at'] as int),

@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
 import '../models/net_meta.dart';
@@ -10,10 +12,13 @@ import '../providers/mirror_provider.dart';
 import '../providers/preferences_provider.dart';
 import '../models/work.dart';
 import '../services/net_meta_service.dart';
+import '../services/translation_service.dart';
 import '../providers/audio_provider.dart';
 import '../providers/library_provider.dart';
 import '../utils/playback_helpers.dart';
 import '../utils/ui_tokens.dart';
+import '../widgets/translation_toggle_button.dart';
+import 'subtitle_preview_screen.dart';
 import '../widgets/enhanced_work_card.dart';
 import '../widgets/file_tree_view.dart';
 import 'audio_player_screen.dart';
@@ -34,6 +39,45 @@ class WorkDetailScreen extends StatefulWidget {
 
 class _WorkDetailScreenState extends State<WorkDetailScreen> {
   List<FileNode> _nodes = const [];
+
+  // ---- 文件树文件名翻译（kikoflu 同款；仅非中文生效）----
+  final Map<String, String> _fileTreeTranslations = {};
+  bool _fileTreeShowTranslation = false;
+  bool _fileTreeTranslating = false;
+  String _fileTreeProgress = '';
+
+  Future<void> _toggleFileTreeTranslation() async {
+    if (_fileTreeTranslating) return;
+    if (_fileTreeTranslations.isNotEmpty) {
+      setState(() => _fileTreeShowTranslation = !_fileTreeShowTranslation);
+      return;
+    }
+    if (_nodes.isEmpty) return;
+    setState(() {
+      _fileTreeTranslating = true;
+      _fileTreeShowTranslation = true;
+    });
+    final names =
+        _nodes.map((n) => n.displayName).where((n) => n.isNotEmpty).toList();
+    final result = await TranslationService.translateBatch(names,
+        onProgress: (done, total) {
+      if (mounted) setState(() => _fileTreeProgress = '$done/$total');
+    });
+    if (!mounted) return;
+    setState(() {
+      _fileTreeTranslations
+        ..clear()
+        ..addAll(result);
+      _fileTreeTranslating = false;
+      _fileTreeProgress = '';
+    });
+  }
+
+  String _fileTreeDisplayName(String original) =>
+      _fileTreeShowTranslation &&
+              _fileTreeTranslations.containsKey(original)
+          ? _fileTreeTranslations[original]!
+          : original;
   NetMeta? _netMeta;
   bool _netMetaLoading = false;
 
@@ -53,9 +97,51 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
   Future<void> _loadNodes() async {
     final library = context.read<LibraryProvider>();
     final nodes = await library.nodesOf(widget.work);
+    // 附加字幕/歌词文件节点（预览用，不进播放队列）。
+    final subtitleNodes = _scanSubtitleFiles();
     if (mounted) {
-      setState(() => _nodes = nodes);
+      setState(() => _nodes = [...nodes, ...subtitleNodes]);
     }
+  }
+
+  /// 扫描作品目录下的 .srt/.vtt/.lrc 文件构造预览节点。
+  List<FileNode> _scanSubtitleFiles() {
+    final result = <FileNode>[];
+    final root = Directory(widget.work.rootPath);
+    if (!root.existsSync()) return result;
+    // 已作为音轨 sidecar 关联的文件不重复列（树上按节点相对路径去重）。
+    final existingPaths = _nodes
+        .where((n) => !n.isDirectory)
+        .map((n) => n.relativePath)
+        .toSet();
+    try {
+      final entities = root.listSync(recursive: true);
+      for (final entity in entities) {
+        if (entity is! File) continue;
+        final lower = entity.path.toLowerCase();
+        if (!lower.endsWith('.srt') &&
+            !lower.endsWith('.vtt') &&
+            !lower.endsWith('.lrc')) {
+          continue;
+        }
+        final rel = p.relative(entity.path, from: root.path);
+        if (existingPaths.contains(rel)) continue;
+        final parent = p.dirname(rel) == '.' ? '' : p.dirname(rel);
+        result.add(FileNode(
+          id: -entity.path.hashCode,
+          workId: widget.work.id,
+          isDirectory: false,
+          name: p.basename(entity.path),
+          relativePath: rel,
+          parentPath: parent,
+          filePath: entity.path,
+          isSubtitleFile: true,
+        ));
+      }
+    } catch (_) {
+      // 目录不可读时静默——仅少展示字幕文件。
+    }
+    return result;
   }
 
   /// M11 网络参考信息（PRD §5.5：本地信息优先，网络参考只补充显示在下方独立区块）。
@@ -117,6 +203,18 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
   /// 按节点精确定位播放（实机 bug 修复：视觉序号 ≠ DB 序号导致点任何
   /// 音轨都播第一个；改为按 track.id 匹配，不依赖顺序）。
   Future<void> _playFromNode(FileNode node) async {
+    if (node.isSubtitleFile) {
+      // 字幕/歌词文件 → 预览（实机需求 2026-09-02）。
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => SubtitlePreviewScreen(
+          source: SubtitlePreviewSource(
+            title: node.name,
+            filePath: node.filePath,
+          ),
+        ),
+      ));
+      return;
+    }
     final audio = context.read<AudioPlayerProvider>();
     final tracks = tracksOf(widget.work, _nodes);
     if (tracks.isEmpty) return;
@@ -341,13 +439,24 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
 
           const SizedBox(height: UiSpacing.large),
 
-          // ⑩ 文件树（恒展开；目录默认收起，点按展开）。
+          // ⑩ 文件树（恒展开；目录默认收起，点按展开）+ 文件名翻译切换。
           _SectionHeader(title: '文件'),
+          Row(
+            children: [
+              TranslationToggleButton(
+                isTranslated: _fileTreeShowTranslation,
+                isLoading: _fileTreeTranslating,
+                progress: _fileTreeProgress,
+                onPressed: _toggleFileTreeTranslation,
+              ),
+            ],
+          ),
           FileTreeView(
             nodes: _nodes,
             onTrackTap: (node) => unawaited(_playFromNode(node)),
             onTrackLongPress: (node) =>
                 showAddToPlaylistDialog(context, work, node),
+            displayName: _fileTreeDisplayName,
           ),
 
           // ⑪ 推荐位：本地同社团在前 + asmr.one 同社团网络推荐补充

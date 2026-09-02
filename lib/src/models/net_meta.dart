@@ -15,6 +15,8 @@ class NetMeta {
     this.netRelease,
     this.netRateAverage,
     this.netRateCount,
+    this.netDlCount,
+    this.netReviewCount,
     this.source = 'asmr_one',
     required this.fetchedAt,
     this.noResult = false,
@@ -35,6 +37,10 @@ class NetMeta {
   final DateTime? netRelease;
   final double? netRateAverage;
   final int? netRateCount;
+
+  /// 销量（dl_count）与评论数（review_count），本地排序用（2026-09-02）。
+  final int? netDlCount;
+  final int? netReviewCount;
 
   /// asmr_one | dlsite（PRD 决策 4：DLsite 仅兜底）。
   final String source;
@@ -62,8 +68,15 @@ class NetMeta {
       netCoverUrl: json['mainCover'] as String?,
       netDescription: json['description'] as String?,
       netRelease: DateTime.tryParse((json['release'] ?? '') as String),
-      netRateAverage: (json['averageRating'] as num?)?.toDouble(),
-      netRateCount: json['ratingCount'] as int?,
+      // asmr.one 实际返回 snake_case（2026-09-02 实测）。
+      netRateAverage: ((json['rate_average_2dp'] ?? json['averageRating'])
+              as num?)
+          ?.toDouble(),
+      netRateCount:
+          ((json['rate_count'] ?? json['ratingCount']) as num?)?.toInt(),
+      netDlCount: (json['dl_count'] ?? json['dlCount']) as int?,
+      netReviewCount:
+          ((json['review_count'] ?? json['reviewCount']) as num?)?.toInt(),
       fetchedAt: DateTime.now(),
     );
   }

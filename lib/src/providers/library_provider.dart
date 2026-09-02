@@ -7,12 +7,14 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/net_meta.dart';
 import '../models/work.dart';
 import '../services/local_library_database.dart';
 import '../services/local_library_scanner.dart';
 
 /// 排序方式（作品库，PRD §5.4 排序/筛选）。
-enum WorkSortBy { title, addedAt, rjCode }
+/// 本地作品排序维度（2026-09-02 新增网络元数据排序 + 正逆序）。
+enum WorkSortBy { title, addedAt, rjCode, netRating, netDlCount, netRateCount }
 
 /// 本地库提供者：扫描根目录管理、扫描执行、作品列表、移出库、统计。
 class LibraryProvider extends ChangeNotifier {
@@ -39,6 +41,18 @@ class LibraryProvider extends ChangeNotifier {
 
   WorkSortBy sortBy = WorkSortBy.title;
 
+  /// true = 降序（默认）；false = 升序。
+  bool sortDescending = true;
+
+  // ---- 筛选（社团/CV/标签，2026-09-02）----
+  String? filterCircle;
+  String? filterVas;
+  final Set<String> filterTags = {};
+
+  // ---- 网络元数据（排序用；懒加载）----
+  final Map<String, NetMeta> _netMetas = {};
+  bool _netMetaLoaded = false;
+
   LibraryProvider() {
     _init();
   }
@@ -60,19 +74,118 @@ class LibraryProvider extends ChangeNotifier {
   }
 
   void _sortWorks() {
-    switch (sortBy) {
-      case WorkSortBy.title:
-        _works.sort((a, b) =>
-            a.title.toLowerCase().compareTo(b.title.toLowerCase()));
-      case WorkSortBy.addedAt:
-        _works.sort((a, b) => b.addedAt.compareTo(a.addedAt));
-      case WorkSortBy.rjCode:
-        _works.sort((a, b) => (a.rjCode ?? 'zzz').compareTo(b.rjCode ?? 'zzz'));
+    int compare(Work a, Work b) {
+      switch (sortBy) {
+        case WorkSortBy.title:
+          return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+        case WorkSortBy.addedAt:
+          return b.addedAt.compareTo(a.addedAt);
+        case WorkSortBy.rjCode:
+          return (a.rjCode ?? 'zzz').compareTo(b.rjCode ?? 'zzz');
+        case WorkSortBy.netRating:
+          return ((netMetaOf(b)?.netRateAverage ?? -1)
+                  .compareTo(netMetaOf(a)?.netRateAverage ?? -1));
+        case WorkSortBy.netDlCount:
+          return (netMetaOf(b)?.netDlCount ?? -1)
+              .compareTo(netMetaOf(a)?.netDlCount ?? -1);
+        case WorkSortBy.netRateCount:
+          return (netMetaOf(b)?.netRateCount ?? -1)
+              .compareTo(netMetaOf(a)?.netRateCount ?? -1);
+      }
     }
+
+    final sorted = [..._works]..sort(compare);
+    // 升序 = 反转（默认全部按"优/新在前"实现，toggle 反转）。
+    _works = sortDescending ? sorted : sorted.reversed.toList();
   }
 
   Future<void> setSortBy(WorkSortBy value) async {
     sortBy = value;
+    _sortWorks();
+    notifyListeners();
+  }
+
+  Future<void> setSortDescending(bool value) async {
+    sortDescending = value;
+    _sortWorks();
+    notifyListeners();
+  }
+
+  // ---- 筛选 ----
+
+  /// 应用筛选后的作品列表（社团/CV/标签 AND 组合）。
+  List<Work> get visibleWorks {
+    if (filterCircle == null &&
+        filterVas == null &&
+        filterTags.isEmpty) {
+      return List.unmodifiable(_works);
+    }
+    return List.unmodifiable(_works.where((w) {
+      if (filterCircle != null && w.circleName != filterCircle) {
+        // 兼容网络回填的社团名。
+        final meta = netMetaOf(w);
+        if (meta?.netCircle != filterCircle) return false;
+      }
+      if (filterVas != null &&
+          !w.vasNames.contains(filterVas) &&
+          !(netMetaOf(w)?.netVas.contains(filterVas) ?? false)) {
+        return false;
+      }
+      if (filterTags.isNotEmpty &&
+          !filterTags.every((t) =>
+              w.tags.contains(t) ||
+              (netMetaOf(w)?.netTags.contains(t) ?? false))) {
+        return false;
+      }
+      return true;
+    }));
+  }
+
+  Future<void> setFilterCircle(String? value) async {
+    filterCircle = value;
+    notifyListeners();
+  }
+
+  Future<void> setFilterVas(String? value) async {
+    filterVas = value;
+    notifyListeners();
+  }
+
+  Future<void> toggleFilterTag(String tag) async {
+    if (filterTags.contains(tag)) {
+      filterTags.remove(tag);
+    } else {
+      filterTags.add(tag);
+    }
+    notifyListeners();
+  }
+
+  Future<void> clearFilters() async {
+    filterCircle = null;
+    filterVas = null;
+    filterTags.clear();
+    notifyListeners();
+  }
+
+  /// 作品的网络元数据（排序/筛选用）。
+  NetMeta? netMetaOf(Work work) {
+    if (work.rjCode == null) return null;
+    return _netMetas[work.rjCode];
+  }
+
+  /// 懒加载全部 NetMeta（首次按网络排序/筛选时触发）。
+  Future<void> _ensureNetMetas() async {
+    if (_netMetaLoaded || _db == null) return;
+    final metas = await _db!.queryAllNetMeta();
+    for (final m in metas) {
+      _netMetas[m.rjCode] = m;
+    }
+    _netMetaLoaded = true;
+  }
+
+  /// 排序切换到网络维度前的预热入口。
+  Future<void> warmNetMetas() async {
+    await _ensureNetMetas();
     _sortWorks();
     notifyListeners();
   }

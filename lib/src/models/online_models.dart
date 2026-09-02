@@ -16,6 +16,7 @@ class OnlineWork {
     this.release,
     this.dlCount,
     this.ratingCount,
+    this.reviewCount,
     this.price,
     this.averageRating,
     this.description,
@@ -34,7 +35,12 @@ class OnlineWork {
   final bool nsfw;
   final DateTime? release;
   final int? dlCount;
+
+  /// 评价数（rate_count，snake_case 兼容）。
   final int? ratingCount;
+
+  /// 评论数（review_count，snake_case 兼容）。
+  final int? reviewCount;
   final int? price;
   final double? averageRating;
   final String? description;
@@ -61,10 +67,16 @@ class OnlineWork {
           .toList(),
       nsfw: json['nsfw'] == true || json['nsfw'] == 1,
       release: DateTime.tryParse((json['release'] ?? '') as String),
-      dlCount: json['dlCount'] as int?,
-      ratingCount: json['ratingCount'] as int?,
+      // asmr.one 实际返回 snake_case；兼容旧镜像 camelCase。
+      dlCount: (json['dl_count'] ?? json['dlCount']) as int?,
+      ratingCount:
+          ((json['rate_count'] ?? json['ratingCount']) as num?)?.toInt(),
+      reviewCount:
+          ((json['review_count'] ?? json['reviewCount']) as num?)?.toInt(),
       price: json['price'] as int?,
-      averageRating: (json['averageRating'] as num?)?.toDouble(),
+      averageRating: ((json['rate_average_2dp'] ?? json['averageRating'])
+              as num?)
+          ?.toDouble(),
       description: json['description'] as String?,
       children: (json['children'] as List?)
           ?.map((child) =>

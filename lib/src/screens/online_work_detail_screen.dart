@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -13,8 +14,11 @@ import '../providers/library_provider.dart';
 import '../providers/mirror_provider.dart';
 import '../providers/online_provider.dart';
 import '../utils/ui_tokens.dart';
+import '../widgets/translation_toggle_button.dart';
 import 'audio_player_screen.dart';
 import 'package:kiko_local/src/services/translation_service.dart';
+import 'online_works_screen.dart';
+import 'subtitle_preview_screen.dart';
 import 'tag_filter_screen.dart';
 import 'work_detail_screen.dart';
 
@@ -42,6 +46,56 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
   /// 标题译文（Google gtx，失败保持 null）。
   String? _titleTranslation;
   bool _translating = false;
+
+  // ---- 文件树文件名翻译（状态提升到本层，树组件只读展示）----
+  final Map<String, String> _fileTreeTranslations = {};
+  bool _fileTreeShowTranslation = false;
+  bool _fileTreeTranslating = false;
+  String _fileTreeProgress = '';
+
+  bool get _fileTreeTranslationVisible => _fileTreeShowTranslation;
+
+  Future<void> _toggleFileTreeTranslation() async {
+    if (_fileTreeTranslating) return;
+    if (_fileTreeTranslations.isNotEmpty) {
+      // kikoflu 同款：已有译文 → 原文/译文切换。
+      setState(() => _fileTreeShowTranslation = !_fileTreeShowTranslation);
+      return;
+    }
+    if (_tracks == null || _tracks!.isEmpty) return;
+    setState(() {
+      _fileTreeTranslating = true;
+      _fileTreeShowTranslation = true;
+    });
+    final names = <String>[];
+    void collect(List<OnlineFileNode> nodes) {
+      for (final n in nodes) {
+        names.add(n.title);
+        if (n.children.isNotEmpty) collect(n.children);
+      }
+    }
+
+    collect(_tracks!);
+    final result = await TranslationService.translateBatch(names,
+        onProgress: (done, total) {
+      if (mounted) setState(() => _fileTreeProgress = '$done/$total');
+    });
+    if (!mounted) return;
+    setState(() {
+      _fileTreeTranslations
+        ..clear()
+        ..addAll(result);
+      _fileTreeTranslating = false;
+      _fileTreeProgress = '';
+    });
+  }
+
+  /// 文件树行显示名（译文优先；仅非中文条目会有译文）。
+  String _fileTreeDisplayName(String original) =>
+      _fileTreeShowTranslation &&
+              _fileTreeTranslations.containsKey(original)
+          ? _fileTreeTranslations[original]!
+          : original;
 
   Future<void> _translateTitle() async {
     if (_translating) return;
@@ -429,9 +483,25 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
                       ),
                     ],
                     const SizedBox(height: UiSpacing.small),
+                    // 社团名可点 → 该社团全部作品（用户需求 2026-09-02）。
                     _InfoLine(
                         icon: Icons.group_outlined,
-                        text: work.circleName ?? '未知社团'),
+                        text: work.circleName ?? '未知社团',
+                        onTap: work.circleId != null
+                            ? () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => Scaffold(
+                                      appBar: AppBar(
+                                          title: Text(
+                                              work.circleName ?? '社团作品')),
+                                      body: OnlineWorksScreen(
+                                        circleId: work.circleId,
+                                        circleTitle: work.circleName,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                            : null),
                     if (work.vas.isNotEmpty)
                       _InfoLine(
                           icon: Icons.mic_outlined,
@@ -439,7 +509,8 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
                     _InfoLine(
                         icon: Icons.star_outline,
                         text: '★${work.averageRating?.toStringAsFixed(1) ?? '-'}'
-                            '（${work.ratingCount ?? 0} 评价 · ${work.dlCount ?? 0} 销量）'),
+                            '（${work.ratingCount ?? 0} 评价 · ${work.dlCount ?? 0} 销量'
+                            '${work.reviewCount != null && work.reviewCount! > 0 ? ' · ${work.reviewCount} 评论' : ''}）'),
                     if (work.release != null)
                       _InfoLine(
                           icon: Icons.calendar_today_outlined,
@@ -488,12 +559,24 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
                       ),
                     ],
                     const SizedBox(height: UiSpacing.large),
-                    // 文件树（流播入口）。
-                    Text('音轨',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(fontWeight: FontWeight.w500)),
+                    // 文件树（流播入口）+ 文件名翻译切换（kikoflu 同款）。
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text('音轨',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w500)),
+                        ),
+                        TranslationToggleButton(
+                          isTranslated: _fileTreeTranslationVisible,
+                          isLoading: _fileTreeTranslating,
+                          progress: _fileTreeProgress,
+                          onPressed: _toggleFileTreeTranslation,
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: UiSpacing.xSmall),
                     if (_tracksLoading)
                       const Padding(
@@ -506,6 +589,7 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
                         flatAudioNodes:
                             _OnlineFileTree.flatten(_tracks!),
                         onTrackTap: (index) => unawaited(_playFrom(index)),
+                        displayName: _fileTreeDisplayName,
                       ),
                   ],
                 ),
@@ -551,29 +635,43 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
 }
 
 class _InfoLine extends StatelessWidget {
-  const _InfoLine({required this.icon, required this.text});
+  const _InfoLine({required this.icon, required this.text, this.onTap});
 
   final IconData icon;
   final String text;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: UiSpacing.xSmall),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: UiIconSize.standard, color: scheme.onSurfaceVariant),
-          const SizedBox(width: UiSpacing.small),
-          Expanded(
-            child: Text(
-              text,
-              style: UiTextStyles.supporting
-                  .copyWith(color: scheme.onSurfaceVariant),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(UiRadii.list),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon,
+                size: UiIconSize.standard,
+                color: onTap != null
+                    ? scheme.primary
+                    : scheme.onSurfaceVariant),
+            const SizedBox(width: UiSpacing.small),
+            Expanded(
+              child: Text(
+                text,
+                style: UiTextStyles.supporting.copyWith(
+                    color: onTap != null
+                        ? scheme.primary
+                        : scheme.onSurfaceVariant),
+              ),
             ),
-          ),
-        ],
+            if (onTap != null)
+              Icon(Icons.chevron_right,
+                  size: UiIconSize.standard, color: scheme.primary),
+          ],
+        ),
       ),
     );
   }
@@ -586,6 +684,7 @@ class _OnlineFileTree extends StatefulWidget {
     required this.onTrackTap,
     this.depth = 0,
     required this.flatAudioNodes,
+    this.displayName,
   });
 
   final List<OnlineFileNode> nodes;
@@ -596,6 +695,9 @@ class _OnlineFileTree extends StatefulWidget {
 
   /// 整棵树扁平化后的音轨列表（根实例计算，逐层透传；序号与播放队列一致）。
   final List<OnlineFileNode> flatAudioNodes;
+
+  /// 文件名显示函数（外层注入译文切换逻辑；null = 原文）。
+  final String Function(String original)? displayName;
 
   /// 扁平化音轨（树前序遍历）。
   static List<OnlineFileNode> flatten(List<OnlineFileNode> nodes) {
@@ -627,6 +729,37 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
     // 目录默认收起（与本地文件树一致，用户约定）。
   }
 
+  /// 可预览的字幕/歌词扩展名。
+  static bool _isPreviewable(String name) {
+    final lower = name.toLowerCase();
+    return lower.endsWith('.srt') ||
+        lower.endsWith('.vtt') ||
+        lower.endsWith('.lrc');
+  }
+
+  /// 在线字幕预览：拉取文件文本后进预览页。
+  Future<void> _previewSubtitle(BuildContext context, node) async {
+    final mirror = context.read<MirrorProvider>();
+    final url = mirror.api.nodeStreamUrl(node);
+    try {
+      final response = await Dio().get<String>(url,
+          options: Options(responseType: ResponseType.plain));
+      if (!context.mounted) return;
+      Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => SubtitlePreviewScreen(
+          source: SubtitlePreviewSource(
+            title: node.title,
+            textContent: response.data,
+          ),
+        ),
+      ));
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('字幕加载失败：$e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -647,7 +780,8 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
                 color: scheme.primary,
                 size: UiIconSize.large,
               ),
-              title: Text(node.title,
+              title: Text(
+                  widget.displayName?.call(node.title) ?? node.title,
                   maxLines: null,
                   style: const TextStyle(fontSize: 20)),
               trailing: Icon(
@@ -668,6 +802,7 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
                 onTrackTap: widget.onTrackTap,
                 depth: widget.depth + 1,
                 flatAudioNodes: widget.flatAudioNodes,
+                displayName: widget.displayName,
               ),
           ] else
             // 全部文件类型都显示；非音频保留完整文件名 + 类型徽章（用户反馈：
@@ -677,7 +812,10 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
               contentPadding: EdgeInsets.only(left: 16 + indent, right: 16),
               leading: _fileIcon(context, node),
               title: Text(
-                node.isAudio ? _stripExt(node.title) : node.title,
+                node.isAudio
+                    ? (widget.displayName?.call(_stripExt(node.title)) ??
+                        _stripExt(node.title))
+                    : (widget.displayName?.call(node.title) ?? node.title),
                 maxLines: null,
                 style: const TextStyle(fontSize: 20),
               ),
@@ -687,7 +825,9 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
               onTap: node.isAudio
                   ? () => widget.onTrackTap(
                       widget.flatAudioNodes.indexOf(node))
-                  : null,
+                  : _isPreviewable(node.title)
+                      ? () => _previewSubtitle(context, node)
+                      : null,
             ),
       ],
     );

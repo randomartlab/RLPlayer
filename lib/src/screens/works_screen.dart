@@ -36,7 +36,7 @@ class _WorksScreenState extends State<WorksScreen> {
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryProvider>();
-    final works = library.works;
+    final works = library.visibleWorks;
 
     return Scaffold(
       appBar: AppBar(
@@ -243,7 +243,15 @@ class _WorksScreenState extends State<WorksScreen> {
                       color: scheme.onSurfaceVariant),
                   tooltip: '排序',
                   initialValue: library.sortBy,
-                  onSelected: library.setSortBy,
+                  onSelected: (value) async {
+                    // 网络维度排序前预热 NetMeta（一次）。
+                    if (value == WorkSortBy.netRating ||
+                        value == WorkSortBy.netDlCount ||
+                        value == WorkSortBy.netRateCount) {
+                      await library.warmNetMetas();
+                    }
+                    await library.setSortBy(value);
+                  },
                   itemBuilder: (context) => const [
                     PopupMenuItem(
                       value: WorkSortBy.title,
@@ -257,7 +265,42 @@ class _WorksScreenState extends State<WorksScreen> {
                       value: WorkSortBy.rjCode,
                       child: Text('按 RJ 号'),
                     ),
+                    PopupMenuItem(
+                      value: WorkSortBy.netRating,
+                      child: Text('按评分'),
+                    ),
+                    PopupMenuItem(
+                      value: WorkSortBy.netDlCount,
+                      child: Text('按销量'),
+                    ),
+                    PopupMenuItem(
+                      value: WorkSortBy.netRateCount,
+                      child: Text('按评价量'),
+                    ),
                   ],
+                ),
+                // 正/逆序切换（用户需求 2026-09-02：排序能切换顺序倒序）。
+                IconButton(
+                  icon: Icon(
+                    library.sortDescending
+                        ? Icons.arrow_downward
+                        : Icons.arrow_upward,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  tooltip: library.sortDescending ? '降序' : '升序',
+                  onPressed: () =>
+                      library.setSortDescending(!library.sortDescending),
+                ),
+                // 筛选入口（社团/CV/标签，独立入口；文件树页点标签筛选保留）。
+                IconButton(
+                  icon: Icon(Icons.filter_list,
+                      color: library.filterCircle != null ||
+                              library.filterVas != null ||
+                              library.filterTags.isNotEmpty
+                          ? scheme.primary
+                          : scheme.onSurfaceVariant),
+                  tooltip: '筛选',
+                  onPressed: () => _showFilterSheet(context, library),
                 ),
                 const Spacer(),
                 IconButton(
@@ -352,6 +395,167 @@ class _WorksScreenState extends State<WorksScreen> {
     if (tracks.isEmpty) return;
     tracks.shuffle();
     await audio.playTracks(tracks);
+  }
+
+  /// 筛选弹层：社团/CV/标签（独立入口，2026-09-02 用户需求）。
+  Future<void> _showFilterSheet(
+      BuildContext context, LibraryProvider library) async {
+    // 预热网络元数据（筛选用社团/CV/标签含网络回填值）。
+    await library.warmNetMetas();
+
+    if (!context.mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final scheme = Theme.of(sheetContext).colorScheme;
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            // 候选值聚合（本地字段 + 网络回填）。
+            final circles = <String>{};
+            final vas = <String>{};
+            final tags = <String>{};
+            for (final w in library.works) {
+              if (w.circleName != null) circles.add(w.circleName!);
+              final meta = library.netMetaOf(w);
+              if (meta?.netCircle != null) circles.add(meta!.netCircle!);
+              vas.addAll(w.vasNames);
+              vas.addAll(meta?.netVas ?? const []);
+              tags.addAll(w.tags);
+              tags.addAll(meta?.netTags ?? const []);
+            }
+            final sortedCircles = circles.toList()..sort();
+            final sortedVas = vas.toList()..sort();
+            final sortedTags = tags.toList()..sort();
+
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.75,
+              builder: (_, __) => Padding(
+                padding: const EdgeInsets.all(UiSpacing.large),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text('筛选',
+                            style: Theme.of(sheetContext)
+                                .textTheme
+                                .titleMedium),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () {
+                            library.clearFilters();
+                            setSheetState(() {});
+                          },
+                          child: const Text('清除'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(sheetContext).pop(),
+                          child: const Text('完成'),
+                        ),
+                      ],
+                    ),
+                    Expanded(
+                      child: ListView(
+                        children: [
+                          Text('社团（${sortedCircles.length}）',
+                              style: Theme.of(sheetContext)
+                                  .textTheme
+                                  .titleSmall),
+                          if (library.filterCircle != null)
+                            ActionChip(
+                              label: Text(
+                                  '已选：${library.filterCircle}'),
+                              onPressed: () {
+                                library.setFilterCircle(null);
+                                setSheetState(() {});
+                              },
+                            ),
+                          SizedBox(
+                            height: 160,
+                            child: ListView(
+                              children: [
+                                for (final c in sortedCircles.take(50))
+                                  ListTile(
+                                    dense: true,
+                                    title: Text(c, maxLines: 1),
+                                    trailing: library.filterCircle == c
+                                        ? Icon(Icons.check,
+                                            color: scheme.primary)
+                                        : null,
+                                    onTap: () {
+                                      library.setFilterCircle(
+                                          library.filterCircle == c
+                                              ? null
+                                              : c);
+                                      setSheetState(() {});
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const Divider(),
+                          Text('CV（${sortedVas.length}）',
+                              style: Theme.of(sheetContext)
+                                  .textTheme
+                                  .titleSmall),
+                          SizedBox(
+                            height: 160,
+                            child: ListView(
+                              children: [
+                                for (final v in sortedVas.take(50))
+                                  ListTile(
+                                    dense: true,
+                                    title: Text(v, maxLines: 1),
+                                    trailing: library.filterVas == v
+                                        ? Icon(Icons.check,
+                                            color: scheme.primary)
+                                        : null,
+                                    onTap: () {
+                                      library.setFilterVas(
+                                          library.filterVas == v
+                                              ? null
+                                              : v);
+                                      setSheetState(() {});
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const Divider(),
+                          Text('标签（${sortedTags.length}）',
+                              style: Theme.of(sheetContext)
+                                  .textTheme
+                                  .titleSmall),
+                          Wrap(
+                            spacing: UiSpacing.small,
+                            runSpacing: UiSpacing.xSmall,
+                            children: [
+                              for (final t in sortedTags.take(80))
+                                FilterChip(
+                                  label: Text(t),
+                                  selected:
+                                      library.filterTags.contains(t),
+                                  onSelected: (_) {
+                                    library.toggleFilterTag(t);
+                                    setSheetState(() {});
+                                  },
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: UiSpacing.large),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 }
 

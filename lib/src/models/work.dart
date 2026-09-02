@@ -117,6 +117,7 @@ class FileNode {
     this.durationSeconds,
     this.lyricPath,
     this.subtitlePath,
+    this.isSubtitleFile = false,
   });
 
   final int id;
@@ -145,6 +146,9 @@ class FileNode {
 
   /// 已关联字幕绝对路径。
   final String? subtitlePath;
+
+  /// 字幕/歌词文件节点（预览用；不进播放队列——tracksOf 会排除）。
+  final bool isSubtitleFile;
 
   /// 播放器显示名（去扩展名）。
   String get displayName {

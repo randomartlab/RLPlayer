@@ -7,7 +7,10 @@ import '../models/work.dart';
 /// 网络元数据不进入播放队列。
 List<AudioTrack> tracksOf(Work work, List<FileNode> nodes) {
   return nodes
-      .where((node) => !node.isDirectory && node.filePath != null)
+      .where((node) =>
+          !node.isDirectory &&
+          !node.isSubtitleFile &&
+          node.filePath != null)
       .map((node) => AudioTrack(
             id: 'node_${node.id}',
             title: node.displayName,

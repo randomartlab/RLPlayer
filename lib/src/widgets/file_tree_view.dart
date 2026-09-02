@@ -15,6 +15,7 @@ class FileTreeView extends StatefulWidget {
     required this.nodes,
     required this.onTrackTap,
     this.onTrackLongPress,
+    this.displayName,
   });
 
   /// 已排序的节点列表（目录在前）。
@@ -25,6 +26,9 @@ class FileTreeView extends StatefulWidget {
 
   /// 长按音轨回调（加入播放列表入口，PRD §5.5 文件树长按操作）。
   final void Function(FileNode node)? onTrackLongPress;
+
+  /// 文件名显示函数（外层注入译文切换；null = 原文）。
+  final String Function(String original)? displayName;
 
   @override
   State<FileTreeView> createState() => _FileTreeViewState();
@@ -100,6 +104,7 @@ class _FileTreeViewState extends State<FileTreeView> {
               depth: _depthOf(node),
               ordinal: ++trackOrdinal,
               onTap: () => widget.onTrackTap(node),
+              displayName: widget.displayName,
               onLongPress: widget.onTrackLongPress != null
                   ? () => widget.onTrackLongPress!(node)
                   : null,
@@ -170,7 +175,11 @@ class _TrackRow extends StatelessWidget {
     required this.ordinal,
     required this.onTap,
     this.onLongPress,
+    this.displayName,
   });
+
+  /// 文件名显示函数（译文切换；null = 原文）。
+  final String Function(String original)? displayName;
 
   final FileNode node;
   final int depth;
@@ -208,9 +217,9 @@ class _TrackRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 文件名：两行自适应换行（§4.7 完整名称保障）。
+                  // 文件名：自适应换行（§4.7 完整名称保障）+ 译文支持。
                   Text(
-                    node.displayName,
+                    displayName?.call(node.displayName) ?? node.displayName,
                     style: Theme.of(context)
                         .textTheme
                         .bodyMedium

@@ -33,7 +33,8 @@ class _CommentSectionState extends State<CommentSection> {
     setState(() => _loading = true);
     try {
       final mirror = context.read<MirrorProvider>();
-      final reviews = await mirror.api.getWorkReviews(widget.workId);
+      // 走已登录镜像（当前激活可能无 token，实机反馈 2026-09-02）。
+      final reviews = await mirror.fetchWorkReviews(widget.workId);
       if (!mounted) return;
       setState(() {
         _reviews = reviews ?? const [];
@@ -63,7 +64,8 @@ class _CommentSectionState extends State<CommentSection> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final mirror = context.watch<MirrorProvider>();
-    final loggedIn = mirror.currentUser != null;
+    final loggedIn =
+        mirror.currentUser != null || mirror.hasAnyLogin;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -136,10 +138,24 @@ class _CommentSectionState extends State<CommentSection> {
                           ? Padding(
                               padding: const EdgeInsets.symmetric(
                                   vertical: UiSpacing.small),
-                              child: Text('暂无评论',
-                                  style: TextStyle(
-                                      fontSize: 13,
-                                      color: scheme.onSurfaceVariant)),
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '暂无评论（或该作品未被 asmr.one 收录评论）',
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        color: scheme.onSurfaceVariant),
+                                  ),
+                                  TextButton.icon(
+                                    onPressed: _load,
+                                    icon: const Icon(Icons.refresh,
+                                        size: 16),
+                                    label: const Text('重新拉取'),
+                                  ),
+                                ],
+                              ),
                             )
                           : Column(
                               children: [

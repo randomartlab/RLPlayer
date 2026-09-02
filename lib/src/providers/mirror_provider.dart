@@ -98,6 +98,11 @@ class MirrorProvider extends ChangeNotifier {
   OnlineUser? get currentUser =>
       _users[_activeHost] ?? _users[defaultHost];
 
+  /// 任一镜像有登录会话（评论等需要登录的功能判断，2026-09-02）。
+  bool get hasAnyLogin =>
+      _defaultToken != null ||
+      _customTokens.values.any((t) => t.isNotEmpty);
+
   MirrorProvider() {
     _init();
   }
@@ -307,6 +312,39 @@ class MirrorProvider extends ChangeNotifier {
   String? _defaultToken;
 
   // ---- 登录 / 登出（Token 加密存储，PRD 决策 2） ----
+
+  /// 作品评论拉取：优先走「当前镜像已登录」的会话；若当前镜像未登录
+  /// 但其他镜像登录过（自动测速切换场景），临时用登录过的镜像请求并
+  /// 恢复（实机反馈 2026-09-02：one 登录后激活镜像切走 → 评论 404）。
+  Future<List<Map<String, dynamic>>?> fetchWorkReviews(int workId,
+      {int page = 1, int pageSize = 20}) async {
+    // 找已登录的镜像（当前激活优先，其次默认，最后任意）。
+    String? target;
+    // 只要有任何 token 即视为已登录宿主。
+    if (_defaultToken != null) target = defaultHost;
+    if (target == null) {
+      for (final e in _customTokens.entries) {
+        if (e.value.isNotEmpty) {
+          target = e.key;
+          break;
+        }
+      }
+    }
+    if (target == null) return null; // 游客。
+
+    final prevHost = api.host;
+    try {
+      final token = target == defaultHost
+          ? _defaultToken
+          : _customTokens[target];
+      api.switchHost(target, token);
+      return await api.getWorkReviews(workId,
+          page: page, pageSize: pageSize);
+    } finally {
+      // 恢复原 host（token 由 host 记忆）。
+      api.switchHost(prevHost);
+    }
+  }
 
   Future<OnlineUser> login(String name, String password) async {
     api.switchHost(_activeHost);

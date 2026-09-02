@@ -38,6 +38,74 @@ class _SearchScreenState extends State<SearchScreen> {
   /// 搜索范围：本地 / 全网（2026-09-02 用户需求）。
   bool _onlineMode = false;
 
+  // ---- 实时候选（单字即弹，2026-09-02 用户需求）----
+  /// 候选条目：label + 命中类型（跳转对应条件搜索）。
+  List<({String label, String type, int conditionType})> _suggestions = const [];
+  Timer? _suggestDebounce;
+
+  void _updateSuggestions() {
+    final library = context.read<LibraryProvider>();
+    final db = library.database;
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) {
+      if (_suggestions.isNotEmpty) setState(() => _suggestions = const []);
+      return;
+    }
+    final items = <({String label, String type, int conditionType})>[];
+    // 聚合本地字段（works + NetMeta——后台回填后元数据齐全）。
+    final seen = <String>{};
+    for (final work in library.works) {
+      for (final vas in work.vasNames) {
+        if (vas.toLowerCase().contains(q) && seen.add('V:$vas')) {
+          items.add((label: vas, type: 'CV', conditionType: 4));
+        }
+      }
+      if (work.circleName != null &&
+          work.circleName!.toLowerCase().contains(q) &&
+          seen.add('C:${work.circleName}')) {
+        items.add(
+            (label: work.circleName!, type: '社团', conditionType: 3));
+      }
+      for (final tag in work.tags) {
+        if (tag.toLowerCase().contains(q) && seen.add('T:$tag')) {
+          items.add((label: tag, type: '标签', conditionType: 2));
+        }
+      }
+      if (work.title.toLowerCase().contains(q) && seen.add('W:${work.title}')) {
+        items.add((label: work.title, type: '作品', conditionType: 0));
+      }
+      if (work.rjCode?.toLowerCase().contains(q) == true &&
+          seen.add('R:${work.rjCode}')) {
+        items.add((label: work.rjCode!, type: 'RJ', conditionType: 1));
+      }
+    }
+    // NetMeta 字段聚合（异步——warmNetMetas 已加载则同步可用）。
+    for (final work in library.works) {
+      final meta = library.netMetaOf(work);
+      if (meta == null) continue;
+      for (final vas in meta.netVas) {
+        if (vas.toLowerCase().contains(q) && seen.add('V:$vas')) {
+          items.add((label: vas, type: 'CV', conditionType: 4));
+        }
+      }
+      if (meta.netCircle != null &&
+          meta.netCircle!.toLowerCase().contains(q) &&
+          seen.add('C:${meta.netCircle}')) {
+        items.add((label: meta.netCircle!, type: '社团', conditionType: 3));
+      }
+      for (final tag in meta.netTags) {
+        if (tag.toLowerCase().contains(q) && seen.add('T:$tag')) {
+          items.add((label: tag, type: '标签', conditionType: 2));
+        }
+      }
+    }
+    // 排序：短标签优先（更精确），限 12 条。
+    items.sort((a, b) => a.label.length.compareTo(b.label.length));
+    if (mounted) {
+      setState(() => _suggestions = items.take(12).toList());
+    }
+  }
+
   /// 搜索条件类型（PRD §5.7：关键词/RJ号/标签/社团/声优）。
   int _conditionType = 0;
   static const _conditions = [
@@ -96,6 +164,7 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _suggestDebounce?.cancel();
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -103,9 +172,16 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _onChanged(String value) {
     _debounce?.cancel();
+    _suggestDebounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () {
       setState(() => _query = value.trim());
       _search();
+    });
+    // 候选即时更新（单字即弹）。
+    _suggestDebounce =
+        Timer(const Duration(milliseconds: 80), () {
+      _query = value.trim();
+      _updateSuggestions();
     });
   }
 
@@ -283,6 +359,48 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
             ),
           ),
+          // 实时候选面板（单字即弹，2026-09-02 用户需求；
+          // 本地模式专属——全网模式有自己的选择器）。
+          if (!_onlineMode && _suggestions.isNotEmpty)
+            Container(
+              constraints: const BoxConstraints(maxHeight: 260),
+              margin:
+                  const EdgeInsets.symmetric(horizontal: UiSpacing.medium),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(UiRadii.control),
+                border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.4)),
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _suggestions.length,
+                itemBuilder: (context, index) {
+                  final sug = _suggestions[index];
+                  return ListTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    leading: _suggestionIcon(sug.type),
+                    title: Text(sug.label,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: Text(sug.type,
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant)),
+                    onTap: () {
+                      // 点候选：切到对应条件类型并搜索。
+                      setState(() {
+                        _conditionType = sug.conditionType;
+                        _query = sug.label;
+                        _controller.text = sug.label;
+                        _suggestions = const [];
+                      });
+                      _search();
+                    },
+                  );
+                },
+              ),
+            ),
           // 高级筛选 chips（PRD §5.7：有无歌词/字幕、年龄分级）。
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: UiSpacing.medium),
@@ -379,6 +497,18 @@ class _SearchScreenState extends State<SearchScreen> {
         ],
       ),
     );
+  }
+
+  Widget _suggestionIcon(String type) {
+    final scheme = Theme.of(context).colorScheme;
+    final icon = switch (type) {
+      'CV' => Icons.mic_outlined,
+      '社团' => Icons.group_outlined,
+      '标签' => Icons.label_outline,
+      'RJ' => Icons.tag,
+      _ => Icons.music_note_outlined,
+    };
+    return Icon(icon, size: 18, color: scheme.primary);
   }
 
   Widget _buildHistory(BuildContext context) {

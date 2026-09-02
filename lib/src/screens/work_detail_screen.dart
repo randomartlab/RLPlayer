@@ -286,7 +286,10 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
         ],
       ),
     );
-    if (rj == null || !rj.startsWith(RegExp(r'(?i)^rj\d{4,}$'))) {
+    debugPrint('[SetRJ] 用户输入: ${rj == null ? 'null' : '[$rj]'} '
+        '(workId=${widget.work.id})');
+    if (rj == null || !RegExp(r'^rj\d{4,}$', caseSensitive: false).hasMatch(rj)) {
+      debugPrint('[SetRJ] 格式校验失败');
       if (rj != null) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('RJ 号格式应为 RJ + 数字，如 RJ123456')));
@@ -294,7 +297,12 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
       return;
     }
     final library = context.read<LibraryProvider>();
-    await library.setWorkRjCode(widget.work.id, rj);
+    try {
+      await library.setWorkRjCode(widget.work.id, rj);
+      debugPrint('[SetRJ] DB 写入成功 $rj');
+    } catch (e) {
+      debugPrint('[SetRJ] DB 写入异常: $e');
+    }
     if (!mounted) return;
     final fresh =
         await context.read<LibraryProvider>().reloadWork(widget.work.id);

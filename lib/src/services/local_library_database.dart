@@ -195,11 +195,29 @@ class LocalLibraryDatabase {
   /// 全量替换本地库（M2：重扫 = 重建；works/file_nodes 整体替换）。
   Future<void> replaceAll(List<ScannedWork> works) async {
     await _db.transaction((txn) async {
+      // 保留手动补录的 RJ（2026-09-02：replaceAll 删除重建会丢
+      // 手动 rj_code → 重扫后补录作品回到未识别）。删除前记录
+      // root_path → rj_code 映射，插入后回填仍无 RJ 的作品。
+      final prevManualRj = <String, String>{};
+      for (final row in await _db.query(
+          'works', columns: ['root_path', 'rj_code'])) {
+        final rj = row['rj_code'] as String?;
+        final root = row['root_path'] as String?;
+        if (rj != null && rj.isNotEmpty && root != null) {
+          prevManualRj[root] = rj;
+        }
+      }
       await txn.delete('file_nodes');
       await txn.delete('works');
       for (final work in works) {
+        var insertRj = work.rjCode;
+        // 扫描未识别但历史手动补录过 → 保留手动 RJ。
+        if ((insertRj == null || insertRj.isEmpty) &&
+            prevManualRj.containsKey(work.rootPath)) {
+          insertRj = prevManualRj[work.rootPath];
+        }
         final workId = await txn.insert('works', {
-          'rj_code': work.rjCode,
+          'rj_code': insertRj,
           'title': work.title,
           'circle_name': work.circleName,
           'vas_names': work.vasNames.isEmpty ? null : work.vasNames.join('\u0001'),

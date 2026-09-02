@@ -70,10 +70,28 @@ class KikoeruApiService {
   // ---- 账号 ----
 
   Future<OnlineUser> login(String name, String password) async {
-    final response = await _dio.post('/api/auth/me', data: {
-      'name': name,
-      'password': password,
-    });
+    late final Response<dynamic> response;
+    try {
+      response = await _dio.post('/api/auth/me', data: {
+        'name': name,
+        'password': password,
+      });
+    } on DioException catch (e) {
+      // 友好错误提示（实机反馈 2026-09-02：登录失败显示巨长黑色报错）。
+      final status = e.response?.statusCode;
+      String msg;
+      switch (status) {
+        case 401:
+          msg = '用户名或密码错误';
+        case 404:
+          msg = '账号不存在';
+        case 403:
+          msg = '账号被禁止访问';
+        default:
+          msg = '网络错误或服务器不可达：${e.type.name}';
+      }
+      throw KikoeruApiException(msg, status);
+    }
     final data = response.data as Map<String, dynamic>;
     final token = data['token'] as String?;
     if (token == null || token.isEmpty) {
@@ -442,5 +460,5 @@ class KikoeruApiException implements Exception {
   final dynamic originalError;
 
   @override
-  String toString() => 'KikoeruApiException: $message ($originalError)';
+  String toString() => message;
 }

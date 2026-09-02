@@ -147,55 +147,56 @@ class _FolderPickerScreenState extends State<FolderPickerScreen> {
             onPressed: _goUp,
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(84),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: UiSpacing.medium),
-                child: Text(
-                  _currentPath,
-                  style: UiTextStyles.supporting.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: UiSpacing.small, vertical: UiSpacing.xSmall),
-                child: Wrap(
-                  spacing: UiSpacing.small,
-                  children: [
-                    _QuickChip(
-                      icon: Icons.folder_shared_outlined,
-                      label: '共享文件夹',
-                      active: _currentPath == mumuSharedPath,
-                      onTap: () {
-                        _currentPath = mumuSharedPath;
-                        _open();
-                      },
-                    ),
-                    _QuickChip(
-                      icon: Icons.smartphone,
-                      label: '内部存储',
-                      active: _currentPath == defaultStorageRoot,
-                      onTap: () {
-                        _currentPath = defaultStorageRoot;
-                        _open();
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
-      body: _buildBody(context),
+      // 路径栏 + 快捷入口移到 body 顶部（大字体下固定 84 高的
+      // AppBar bottom 会溢出挤压列表，实机反馈 2026-09-02：
+      // 80 字体缩放下目录列表被挤没且无法上拉）。
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+                UiSpacing.medium, UiSpacing.small, UiSpacing.medium, 0),
+            child: Text(
+              _currentPath,
+              style: UiTextStyles.supporting.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: UiSpacing.small, vertical: UiSpacing.xSmall),
+            child: Wrap(
+              spacing: UiSpacing.small,
+              runSpacing: UiSpacing.xSmall,
+              children: [
+                _QuickChip(
+                  icon: Icons.folder_shared_outlined,
+                  label: '共享文件夹',
+                  active: _currentPath == mumuSharedPath,
+                  onTap: () {
+                    _currentPath = mumuSharedPath;
+                    _open();
+                  },
+                ),
+                _QuickChip(
+                  icon: Icons.smartphone,
+                  label: '内部存储',
+                  active: _currentPath == defaultStorageRoot,
+                  onTap: () {
+                    _currentPath = defaultStorageRoot;
+                    _open();
+                  },
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: _buildBody(context)),
+        ],
+      ),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(UiSpacing.medium),

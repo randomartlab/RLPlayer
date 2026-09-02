@@ -12,6 +12,7 @@ import '../providers/theme_provider.dart';
 import '../providers/ui_settings_provider.dart';
 import '../utils/ui_tokens.dart';
 import 'folder_picker_screen.dart';
+import 'help_screen.dart';
 import 'mirror_management_screen.dart';
 import 'package:kiko_local/src/services/net_meta_service.dart';
 
@@ -36,6 +37,18 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(UiSpacing.medium),
         children: [
+          ListTile(
+            leading: _LeadingIcon(
+                icon: Icons.help_outline, context: context),
+            title: const Text('帮助与指南'),
+            subtitle: const Text('本地识别 / 补 RJ / 翻译 / 评论 / 镜像 / 搜索'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                  builder: (context) => const HelpScreen()),
+            ),
+          ),
+          const SizedBox(height: UiSpacing.medium),
           _SettingsCard(
             title: '服务器与账号',
             children: [

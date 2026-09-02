@@ -235,28 +235,39 @@ class KikoeruApiService {
 
   /// 作品评论（需登录 token；游客返回 null，2026-09-02）。
   ///
-  /// asmr.one 对「无评论/未收录」作品返回 404——按空列表处理而不是报错
-  /// （实机反馈 2026-09-02）。返回结构版本差异大（reviews/comments/data
-  /// 嵌套均有出现），做多 key 递归提取（实机反馈 2026-09-02：有评论却
-  /// 显示「暂无」）。
+  /// 轮询多个候选端点（review / reviews / works/{id}/reviews），
+  /// 取首个非空（2026-09-02 实测：kikoeru 不同部署端点不一致）。
+  /// 404 = 无评论/未收录 → 空列表。
   Future<List<Map<String, dynamic>>?> getWorkReviews(int workId,
       {int page = 1, int pageSize = 20}) async {
     if (_token == null || _token!.isEmpty) return null;
-    try {
-      final response = await _dio.get('/api/review/$workId',
-          queryParameters: {'page': page, 'pageSize': pageSize});
-      final extracted = _extractReviewList(response.data);
-      if (response.data is Map && extracted.isEmpty) {
-        // 诊断：真实 key 集合，便于后续兼容。
-        final keys = (response.data as Map).keys.take(12).toList();
-        debugPrint('[Review] 响应含键 $keys 但未提取到条目');
+    final endpoints = [
+      '/api/review/$workId',
+      '/api/reviews/$workId',
+      '/api/works/$workId/reviews',
+    ];
+    for (final ep in endpoints) {
+      try {
+        final response = await _dio.get(ep,
+            queryParameters: {'page': page, 'pageSize': pageSize});
+        final extracted = _extractReviewList(response.data);
+        if (extracted.isNotEmpty) {
+          return extracted;
+        }
+        if (response.data is Map) {
+          final keys = (response.data as Map).keys.take(12).toList();
+          debugPrint('[Review] $ep 响应键 $keys 无条目');
+        }
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 404 || e.response?.statusCode == 401) {
+          debugPrint('[Review] $ep -> ${e.response?.statusCode}');
+          continue; // 该端点无数据/无权限 → 试下一个。
+        }
+        debugPrint('[Review] $ep 异常: $e');
+        continue;
       }
-      return extracted;
-    } on DioException catch (e) {
-      // 404 = 该作品无评论 / 未收录，按空列表返回。
-      if (e.response?.statusCode == 404) return const [];
-      rethrow;
     }
+    return const [];
   }
 
   /// 评论列表多 key 递归提取（reviews/comments/data/items/results）。

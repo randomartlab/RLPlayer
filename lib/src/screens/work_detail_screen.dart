@@ -644,7 +644,9 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
               final numeric = int.tryParse(work.rjCode!
                   .replaceAll(RegExp(r'[^0-9]'), ''));
               if (numeric == null) return const SizedBox.shrink();
-              return CommentSection(workId: numeric);
+              return CommentSection(
+                  workId: numeric,
+                  rjCode: work.rjCode);
             }),
             const SizedBox(height: UiSpacing.small),
           ],

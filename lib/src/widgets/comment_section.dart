@@ -8,14 +8,18 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/mirror_provider.dart';
+import '../services/net_meta_service.dart';
 import '../services/translation_service.dart';
 import '../utils/ui_tokens.dart';
 
 class CommentSection extends StatefulWidget {
-  const CommentSection({super.key, required this.workId});
+  const CommentSection({super.key, required this.workId, this.rjCode});
 
   /// asmr.one 作品数字 id（RJ 号数字部分）。
   final int workId;
+
+  /// DLsite RJ 号（本地作品直接可用；DLsite 评论直抓用，2026-09-02）。
+  final String? rjCode;
 
   @override
   State<CommentSection> createState() => _CommentSectionState();
@@ -33,12 +37,46 @@ class _CommentSectionState extends State<CommentSection> {
     setState(() => _loading = true);
     try {
       final mirror = context.read<MirrorProvider>();
-      // 走已登录镜像（当前激活可能无 token，实机反馈 2026-09-02）。
+      // 1) asmr.one 端点轮询（走已登录镜像）。
       final reviews = await mirror.fetchWorkReviews(widget.workId);
+      if (reviews != null && reviews.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _reviews = reviews;
+          _error = null;
+          _loading = false;
+        });
+        return;
+      }
+      // 2) asmr.one 无评论 → DLsite 直抓（本地作品有 RJ 号时）。
+      final rj = widget.rjCode;
+      if (rj != null && rj.isNotEmpty) {
+        final meta = context.read<NetMetaService>();
+        final dlsite = await meta.fetchDlsiteReviews(rj);
+        if (dlsite.isNotEmpty) {
+          if (!mounted) return;
+          setState(() {
+            _reviews = [
+              for (final r in dlsite)
+                <String, dynamic>{
+                  'name': r.name,
+                  'rating': r.rating,
+                  'comment': r.comment,
+                  'date': r.date,
+                  'title': r.title,
+                  'source': 'DLsite',
+                },
+            ];
+            _error = null;
+            _loading = false;
+          });
+          return;
+        }
+      }
       if (!mounted) return;
       setState(() {
-        _reviews = reviews ?? const [];
-        _error = null;
+        _reviews = const [];
+        _error = rj != null ? 'DLsite 未抓到评论（可能网络/IP 限制）' : null;
         _loading = false;
       });
     } catch (e) {
@@ -143,7 +181,7 @@ class _CommentSectionState extends State<CommentSection> {
                                     CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '暂无评论（或该作品未被 asmr.one 收录评论）',
+                                    _error ?? '暂无评论',
                                     style: TextStyle(
                                         fontSize: 13,
                                         color: scheme.onSurfaceVariant),
@@ -187,6 +225,9 @@ class _ReviewTile extends StatelessWidget {
     final rating = (review['rating'] as num?)?.toInt();
     final name = (review['name'] as String?) ?? '匿名';
     final comment = (review['comment'] as String?) ?? '';
+    final title = (review['title'] as String?) ?? '';
+    final date = (review['date'] as String?) ?? '';
+    final source = (review['source'] as String?) ?? '';
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: UiSpacing.small),
@@ -230,11 +271,28 @@ class _ReviewTile extends StatelessWidget {
                 ),
             ],
           ),
+          if (title.isNotEmpty)
+            Text(
+              '「$title」',
+              style: const TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w600, height: 1.4),
+              maxLines: null,
+            ),
           if (comment.isNotEmpty)
             Text(
               comment,
               style: const TextStyle(fontSize: 14, height: 1.45),
               maxLines: null,
+            ),
+          if (date.isNotEmpty || source.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                [if (date.isNotEmpty) date, if (source.isNotEmpty) source]
+                    .join(' · '),
+                style: TextStyle(
+                    fontSize: 11, color: scheme.onSurfaceVariant),
+              ),
             ),
           if (translated != null) ...[
             const SizedBox(height: UiSpacing.xSmall),

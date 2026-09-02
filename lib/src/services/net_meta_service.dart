@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/net_meta.dart';
+import 'dlsite_review_parser.dart';
 import '../models/work.dart' show CoverSource;
 import 'local_library_database.dart';
 import '../providers/mirror_provider.dart';
@@ -181,6 +182,9 @@ class NetMetaService {
       'User-Agent':
           'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Mobile Safari/537.36',
       'Accept': 'application/json',
+      // R18 age 确认 + 语言/货币（作品页/评论区需成人 cookie）。
+      'Cookie': 'age_check=1; is_over18=1; locale=zh-cn',
+      'Referer': 'https://www.dlsite.com/maniax/',
     },
     validateStatus: (status) => status != null && status < 500,
   ));
@@ -202,6 +206,25 @@ class NetMetaService {
       );
     } catch (_) {
       // 旧 Dio 无 adapter 时忽略（保持默认直连）。
+    }
+  }
+
+
+  /// 抓取 DLsite 作品页评论（真实浏览器可达环境下有效；
+  /// 2026-09-02：asmr.one 不镜像评论正文，改用 DLsite 直抓）。
+  Future<List<DlsiteReview>> fetchDlsiteReviews(String rjCode) async {
+    try {
+      await _applyDlsiteProxy();
+      final response = await _dlsiteDio.get(
+          'https://www.dlsite.com/maniax/work/=/product_id/$rjCode.html');
+      final htmlText = response.data;
+      if (htmlText is! String || htmlText.isEmpty) return const [];
+      final reviews = parseDlsiteReviewsHtml(htmlText);
+      debugPrint('[DlsiteReview] $rjCode 抓到 ${reviews.length} 条');
+      return reviews;
+    } catch (e) {
+      debugPrint('[DlsiteReview] $rjCode 抓取失败: $e');
+      return const [];
     }
   }
 

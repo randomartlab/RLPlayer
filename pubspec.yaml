@@ -39,6 +39,7 @@ dependencies:
   # 音频元数据（时长/内嵌封面提取，纯 Dart）
   audio_metadata_reader: ^1.7.1
   charset: ^2.0.1
+  html: ^0.15.4
   dio: ^5.11.0
   flutter_secure_storage: ^11.0.0
   cached_network_image: ^3.4.1

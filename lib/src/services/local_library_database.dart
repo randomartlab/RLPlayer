@@ -194,19 +194,20 @@ class LocalLibraryDatabase {
 
   /// 全量替换本地库（M2：重扫 = 重建；works/file_nodes 整体替换）。
   Future<void> replaceAll(List<ScannedWork> works) async {
-    await _db.transaction((txn) async {
-      // 保留手动补录的 RJ（2026-09-02：replaceAll 删除重建会丢
-      // 手动 rj_code → 重扫后补录作品回到未识别）。删除前记录
-      // root_path → rj_code 映射，插入后回填仍无 RJ 的作品。
-      final prevManualRj = <String, String>{};
-      for (final row in await _db.query(
-          'works', columns: ['root_path', 'rj_code'])) {
-        final rj = row['rj_code'] as String?;
-        final root = row['root_path'] as String?;
-        if (rj != null && rj.isNotEmpty && root != null) {
-          prevManualRj[root] = rj;
-        }
+    // 保留手动补录的 RJ（2026-09-02：replaceAll 删除重建会丢手动
+    // rj_code → 重扫后补录作品回到未识别）。注意：查询必须在事务外
+    // 执行——sqflite 单连接在 transaction 回调内调用 db.query 会
+    // 死锁（实机反馈 2026-09-02：扫描发现作品后卡转圈）。
+    final prevManualRj = <String, String>{};
+    for (final row in await _db
+        .query('works', columns: ['root_path', 'rj_code'])) {
+      final rj = row['rj_code'] as String?;
+      final root = row['root_path'] as String?;
+      if (rj != null && rj.isNotEmpty && root != null) {
+        prevManualRj[root] = rj;
       }
+    }
+    await _db.transaction((txn) async {
       await txn.delete('file_nodes');
       await txn.delete('works');
       for (final work in works) {

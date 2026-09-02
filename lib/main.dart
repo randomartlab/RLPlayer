@@ -134,8 +134,9 @@ class KikoLocalApp extends StatelessWidget {
                 final useDynamic = settings.colorSchemeType ==
                     ColorSchemeType.dynamic;
 
-                return MaterialApp(
-                  title: 'RLPlayer',
+                return _NetMetaBackfillScheduler(
+                  child: MaterialApp(
+                    title: 'RLPlayer',
                   debugShowCheckedModeBanner: false,
                   // 全局字体缩放（用户设置，叠加系统缩放；上限 2.0 与 PRD §4.7 一致）。
                   builder: (context, child) {
@@ -161,9 +162,10 @@ class KikoLocalApp extends StatelessWidget {
                     settings.colorSchemeType,
                   ),
                   themeMode: settings.toThemeMode(),
-                  home: StoragePermissionGate(
-            child: _HistoryRecorder(child: MainScreen()),
-          ),
+                    home: StoragePermissionGate(
+                      child: _HistoryRecorder(child: MainScreen()),
+                    ),
+                  ),
                 );
               },
             ),
@@ -288,5 +290,50 @@ class _OverlayLyricPage extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+
+/// 启动后调度 NetMeta 后台回填（筛选/排序数据源，一次即可）。
+class _NetMetaBackfillScheduler extends StatefulWidget {
+  const _NetMetaBackfillScheduler({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_NetMetaBackfillScheduler> createState() =>
+      _NetMetaBackfillSchedulerState();
+}
+
+class _NetMetaBackfillSchedulerState extends State<_NetMetaBackfillScheduler> {
+  bool _scheduled = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_scheduled) {
+      _scheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Future<void>.delayed(const Duration(seconds: 8), () async {
+          try {
+            final library = context.read<LibraryProvider>();
+            final service = context.read<NetMetaService>();
+            final db = library.database;
+            if (db == null) return;
+            final existing = (await db.queryAllNetMeta())
+                .map((m) => m.rjCode)
+                .toSet();
+            final missing = library.works
+                .where((w) =>
+                    w.rjCode != null && !existing.contains(w.rjCode))
+                .map((w) => w.rjCode!)
+                .toList();
+            if (missing.isEmpty) return;
+            debugPrint('[NetMeta] 后台回填 ${missing.length} 个作品');
+            await service.backfillAll(missing);
+          } catch (_) {}
+        });
+      });
+    }
+    return widget.child;
   }
 }

@@ -464,14 +464,28 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
                       ),
                     ),
                     const SizedBox(height: UiSpacing.large),
-                    Text(
-                      work.title,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
-                      maxLines: null,
-                      overflow: TextOverflow.visible,
+                    // 标题 + 免费翻译按钮（无官方译名时；实机需求 2026-09-02）。
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            work.title,
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold),
+                            maxLines: null,
+                            overflow: TextOverflow.visible,
+                          ),
+                        ),
+                        if (!TranslationService.isMostlyChinese(work.title))
+                          _TitleTranslateButton(
+                            translating: _translating,
+                            translated: _titleTranslation != null,
+                            onPressed: _translateTitle,
+                          ),
+                      ],
                     ),
                     if (work.titleTranslation != null &&
                         work.titleTranslation!.isNotEmpty) ...[
@@ -480,6 +494,13 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
                         work.titleTranslation!,
                         style: TextStyle(
                             fontSize: 13, color: scheme.onSurfaceVariant),
+                      ),
+                    ] else if (_titleTranslation != null) ...[
+                      const SizedBox(height: UiSpacing.xSmall),
+                      Text(
+                        _titleTranslation!,
+                        style: TextStyle(
+                            fontSize: 14, color: scheme.primary),
                       ),
                     ],
                     const SizedBox(height: UiSpacing.small),
@@ -883,5 +904,40 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
       _ => (Icons.insert_drive_file_outlined, scheme.onSurfaceVariant),
     };
     return Icon(icon, size: UiIconSize.large, color: color);
+  }
+}
+
+
+/// 标题翻译小按钮（在线详情页）。
+class _TitleTranslateButton extends StatelessWidget {
+  const _TitleTranslateButton({
+    required this.translating,
+    required this.translated,
+    required this.onPressed,
+  });
+
+  final bool translating;
+  final bool translated;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return IconButton(
+      onPressed: translating ? null : onPressed,
+      icon: translating
+          ? SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: scheme.primary),
+            )
+          : Icon(
+              Icons.g_translate,
+              size: 22,
+              color: translated ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+      tooltip: translated ? '显示原文' : '翻译标题',
+    );
   }
 }

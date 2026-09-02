@@ -10,6 +10,7 @@ import '../services/local_library_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/ui_tokens.dart';
 import '../widgets/enhanced_work_card.dart';
+import 'online_search_section.dart';
 import 'work_detail_screen.dart';
 
 /// Tab2 搜索页（M6，PRD §5.7 首版：关键词/RJ 号本地搜索）。
@@ -33,6 +34,9 @@ class _SearchScreenState extends State<SearchScreen> {
   String _query = '';
   List<Work> _results = const [];
   bool _searched = false;
+
+  /// 搜索范围：本地 / 全网（2026-09-02 用户需求）。
+  bool _onlineMode = false;
 
   /// 搜索条件类型（PRD §5.7：关键词/RJ号/标签/社团/声优）。
   int _conditionType = 0;
@@ -215,7 +219,26 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
       body: Column(
         children: [
-          // 条件类型 chips（PRD §5.7 五条件）。
+          // 搜索范围 toggle（本地/全网，2026-09-02）。
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+                UiSpacing.medium, UiSpacing.xSmall, UiSpacing.medium, 0),
+            child: Row(
+              children: [
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('本地')),
+                    ButtonSegment(value: true, label: Text('全网')),
+                  ],
+                  selected: {_onlineMode},
+                  onSelectionChanged: (v) =>
+                      setState(() => _onlineMode = v.first),
+                ),
+              ],
+            ),
+          ),
+          // 条件类型 chips（PRD §5.7 五条件；全网模式标签/社团/声优
+          // 变为全表选择器）。
           Padding(
             padding: const EdgeInsets.fromLTRB(
                 UiSpacing.medium, UiSpacing.small, UiSpacing.medium, 0),
@@ -302,32 +325,38 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
           Expanded(
-            child: _results.isNotEmpty
-                ? ListView.builder(
-                    key: const PageStorageKey('search_results'),
-                    itemCount: _results.length,
-                    itemBuilder: (context, index) => EnhancedWorkCard(
-                      work: _results[index],
-                      size: WorkCardSize.list,
-                      onTap: () => _openDetail(context, _results[index]),
-                    ),
+            // 全网模式：在线搜索（标签/社团/声优为全表选择器）。
+            child: _onlineMode
+                ? OnlineSearchSection(
+                    conditionType: _conditionType,
+                    query: _query,
                   )
-                : _searched
-                    ? Center(
-                        child: Text(
-                          '没有找到「$_query」相关作品',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(color: scheme.onSurfaceVariant),
+                : _results.isNotEmpty
+                    ? ListView.builder(
+                        key: const PageStorageKey('search_results'),
+                        itemCount: _results.length,
+                        itemBuilder: (context, index) => EnhancedWorkCard(
+                          work: _results[index],
+                          size: WorkCardSize.list,
+                          onTap: () => _openDetail(context, _results[index]),
                         ),
                       )
-                    : Column(
-                        children: [
-                          _buildHistory(context),
-                          Expanded(child: _buildIdle(context)),
-                        ],
-                      ),
+                    : _searched
+                        ? Center(
+                            child: Text(
+                              '没有找到「$_query」相关作品',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                            ),
+                          )
+                        : Column(
+                            children: [
+                              _buildHistory(context),
+                              Expanded(child: _buildIdle(context)),
+                            ],
+                          ),
           ),
         ],
       ),

@@ -602,11 +602,14 @@ class _CompactCard extends StatelessWidget with _OnlineCardBase {
           children: [
             coverStack(context, work, aspectRatio: 4 / 3),
             const SizedBox(height: UiSpacing.xSmall),
+            // 实机反馈 2026-09-02：三列窄卡单行截断 → 两行自适应。
             Text(work.title,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w500)),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    height: 1.25)),
           ],
         ),
       ),

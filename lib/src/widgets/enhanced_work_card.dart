@@ -358,14 +358,16 @@ class _CompactCard extends StatelessWidget {
             ),
             if (!hideText) ...[
               const SizedBox(height: UiSpacing.xSmall),
-              // 标题 12sp 单行省略（§4.7 卡片例外条款）。
+              // 标题 12sp（实机反馈 2026-09-02：三列窄卡单行截断，
+              // 放开到两行自适应）。
               Text(
                 work.title,
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
+                  height: 1.25,
                 ),
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ],

@@ -263,4 +263,22 @@ class NetMetaService {
 
   /// 缓存清理（设置页入口）。
   Future<void> clearCache() async => db?.clearNetMeta();
+
+  /// 后台批量回填：对本地库缺 NetMeta 的作品逐个拉取。
+  ///
+  /// 筛选/排序（社团/CV/标签/评分）依赖 NetMeta——仅详情页按需拉取会
+  /// 导致大部分作品无数据（实机反馈 2026-09-02：社团/标签筛选空白）。
+  /// 串行 + 尊重 Wi-Fi 限制 + 偏好开关；单作品失败不中断。
+  Future<void> backfillAll(Iterable<String> rjCodes) async {
+    for (final rjCode in rjCodes) {
+      // 偏好开关关闭 → 整体退出。
+      final prefs = await SharedPreferences.getInstance();
+      if (!(prefs.getBool('pref_meta_enabled') ?? true)) return;
+      try {
+        await getMeta(rjCode);
+      } catch (_) {
+        // 单个失败继续下一个。
+      }
+    }
+  }
 }

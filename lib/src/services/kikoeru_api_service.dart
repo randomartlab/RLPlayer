@@ -197,6 +197,50 @@ class KikoeruApiService {
         .toList();
   }
 
+  /// 全部标签（搜索选择器用，2026-09-02；按使用数排序）。
+  Future<List<Map<String, dynamic>>> getAllTags() async {
+    final response = await _dio.get('/api/tags/',
+        queryParameters: {'pageSize': 500, 'order': 'count'});
+    final data = response.data;
+    return (data is List ? data : (data['tags'] as List? ?? const []))
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+  }
+
+  /// 全部声优（搜索选择器用；按作品数排序）。
+  Future<List<Map<String, dynamic>>> getAllVas() async {
+    final response = await _dio.get('/api/vas/',
+        queryParameters: {'pageSize': 1000, 'order': 'count'});
+    final data = response.data;
+    return (data is List ? data : (data['vas'] as List? ?? const []))
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+  }
+
+  /// 全部社团（搜索选择器用；按作品数排序）。
+  Future<List<Map<String, dynamic>>> getAllCircles() async {
+    final response = await _dio.get('/api/circles/',
+        queryParameters: {'pageSize': 1000, 'order': 'count'});
+    final data = response.data;
+    return (data is List ? data : (data['circles'] as List? ?? const []))
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+  }
+
+  /// 声优的全部作品（搜索按 CV 选取后检索）。
+  Future<List<OnlineWork>> getVaWorks(String vaId,
+      {int pageSize = 20}) async {
+    final response = await _dio.get('/api/vas/$vaId/works',
+        queryParameters: {'page': 1, 'pageSize': pageSize});
+    final data = response.data as Map<String, dynamic>;
+    return (((data['works'] ?? const []) as List))
+        .map((w) => OnlineWork.fromJson(w as Map<String, dynamic>))
+        .toList();
+  }
+
   /// 社团作品（分页 + 排序；社团模式页，2026-09-02）。
   Future<List<OnlineWork>> getCircleWorksPage(int circleId, int page,
       {int pageSize = 20, String order = 'release'}) async {

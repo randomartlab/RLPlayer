@@ -40,6 +40,43 @@ class WorkDetailScreen extends StatefulWidget {
 class _WorkDetailScreenState extends State<WorkDetailScreen> {
   List<FileNode> _nodes = const [];
 
+  // ---- 标题翻译（实机需求 2026-09-02）----
+  String? _titleTranslation;
+  bool _titleTranslating = false;
+
+  Future<void> _translateTitle() async {
+    if (_titleTranslating) return;
+    if (_titleTranslation != null) {
+      // 再点切换回原文。
+      setState(() => _titleTranslation = null);
+      return;
+    }
+    setState(() => _titleTranslating = true);
+    final result = await TranslationService.translate(widget.work.title);
+    if (!mounted) return;
+    setState(() {
+      _titleTranslation = result;
+      _titleTranslating = false;
+    });
+  }
+
+  // ---- CV 名翻译（实机需求 2026-09-02）----
+  final Map<String, String> _cvTranslations = {};
+  bool _cvTranslating = false;
+
+  Future<void> _translateCvs(List<String> vas) async {
+    if (_cvTranslating || vas.isEmpty) return;
+    setState(() => _cvTranslating = true);
+    final result = await TranslationService.translateBatch(vas);
+    if (!mounted) return;
+    setState(() {
+      _cvTranslations
+        ..clear()
+        ..addAll(result);
+      _cvTranslating = false;
+    });
+  }
+
   // ---- 文件树文件名翻译（kikoflu 同款；仅非中文生效）----
   final Map<String, String> _fileTreeTranslations = {};
   bool _fileTreeShowTranslation = false;
@@ -323,16 +360,43 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           ),
           const SizedBox(height: UiSpacing.large),
 
-          // ② 标题行：16sp 自适应换行完整显示（§4.7 强约束：无 ellipsis）。
-          Text(
-            work.title,
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge
-                ?.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
-            maxLines: null,
-            overflow: TextOverflow.visible,
+          // ② 标题行：自适应换行完整显示（§4.7 强约束：无 ellipsis）+
+          //    非中文标题翻译（实机需求 2026-09-02）。
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  work.title,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
+                  maxLines: null,
+                  overflow: TextOverflow.visible,
+                ),
+              ),
+              if (TranslationService.isMostlyChinese(work.title))
+                const SizedBox.shrink()
+              else
+                _TitleTranslateButton(
+                  translating: _titleTranslating,
+                  translated: _titleTranslation != null,
+                  onPressed: _translateTitle,
+                ),
+            ],
           ),
+          if (_titleTranslation != null) ...[
+            const SizedBox(height: UiSpacing.xSmall),
+            Text(
+              _titleTranslation!,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontSize: 17,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+              maxLines: null,
+            ),
+          ],
           const SizedBox(height: UiSpacing.small),
 
           // ③ 本地文件信息（RJ 号、文件数、总时长、本地路径）。
@@ -393,7 +457,39 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
                 _netMeta!.netCircle != widget.work.circleName)
               _RefLine(label: '社团：${_netMeta!.netCircle!}'),
             if (_netMeta!.netVas.isNotEmpty)
-              _RefLine(label: 'CV：${_netMeta!.netVas.join(' / ')}'),
+              Row(
+                children: [
+                  Expanded(
+                    child: _RefLine(
+                        label: _cvTranslations.isEmpty
+                            ? 'CV：${_netMeta!.netVas.join(' / ')}'
+                            : 'CV：${_netMeta!.netVas.map((v) => _cvTranslations[v] ?? v).join(' / ')}'),
+                  ),
+                  if (_netMeta!.netVas
+                      .any((v) => !TranslationService.isMostlyChinese(v)))
+                    IconButton(
+                      onPressed: _cvTranslating
+                          ? null
+                          : () => _translateCvs(_netMeta!.netVas),
+                      icon: _cvTranslating
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Theme.of(context).colorScheme.primary),
+                            )
+                          : Icon(
+                              Icons.g_translate,
+                              size: 18,
+                              color: _cvTranslations.isEmpty
+                                  ? Theme.of(context).colorScheme.onSurfaceVariant
+                                  : Theme.of(context).colorScheme.primary,
+                            ),
+                      tooltip: '翻译 CV 名',
+                    ),
+                ],
+              ),
             if (_netMeta!.netRelease != null)
               _RefLine(
                   label: '发行：${_netMeta!.netRelease!.year}-${_netMeta!.netRelease!.month.toString().padLeft(2, '0')}-${_netMeta!.netRelease!.day.toString().padLeft(2, '0')}'),
@@ -439,17 +535,16 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
 
           const SizedBox(height: UiSpacing.large),
 
-          // ⑩ 文件树（恒展开；目录默认收起，点按展开）+ 文件名翻译切换。
-          _SectionHeader(title: '文件'),
-          Row(
-            children: [
-              TranslationToggleButton(
-                isTranslated: _fileTreeShowTranslation,
-                isLoading: _fileTreeTranslating,
-                progress: _fileTreeProgress,
-                onPressed: _toggleFileTreeTranslation,
-              ),
-            ],
+          // ⑩ 文件树（恒展开；目录默认收起，点按展开）+ 文件名翻译切换
+          // （按钮在标题行右侧，与在线树一致——实机反馈位置太隐蔽）。
+          _SectionHeader(
+            title: '文件',
+            trailing: TranslationToggleButton(
+              isTranslated: _fileTreeShowTranslation,
+              isLoading: _fileTreeTranslating,
+              progress: _fileTreeProgress,
+              onPressed: _toggleFileTreeTranslation,
+            ),
           ),
           FileTreeView(
             nodes: _nodes,
@@ -518,9 +613,12 @@ class _InfoRow extends StatelessWidget {
 }
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
+  const _SectionHeader({required this.title, this.trailing});
 
   final String title;
+
+  /// 标题行右侧控件（如文件树翻译切换按钮）。
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -540,6 +638,7 @@ class _SectionHeader extends StatelessWidget {
             ),
           ),
         ),
+        if (trailing != null) trailing!,
       ],
     );
   }
@@ -663,6 +762,39 @@ class _OnlineRelatedCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 标题翻译小按钮（g 图标 + 译/原切换）。
+class _TitleTranslateButton extends StatelessWidget {
+  const _TitleTranslateButton({
+    required this.translating,
+    required this.translated,
+    required this.onPressed,
+  });
+
+  final bool translating;
+  final bool translated;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return IconButton(
+      onPressed: translating ? null : onPressed,
+      icon: translating
+          ? SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: scheme.primary),
+            )
+          : Icon(
+              Icons.g_translate,
+              size: 22,
+              color: translated ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+      tooltip: translated ? '显示原文' : '翻译标题',
     );
   }
 }

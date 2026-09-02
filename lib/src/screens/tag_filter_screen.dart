@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:provider/provider.dart';
 
 import '../models/online_models.dart';
@@ -104,15 +105,11 @@ class _TagFilterScreenState extends State<TagFilterScreen> {
                     ],
                   ),
                 )
-              : GridView.builder(
+              : MasonryGridView.count(
                   padding: const EdgeInsets.all(UiSpacing.small),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio: 0.72,
-                    mainAxisSpacing: UiSpacing.small,
-                    crossAxisSpacing: UiSpacing.small,
-                  ),
+                  crossAxisCount: 2,
+                  mainAxisSpacing: UiSpacing.small,
+                  crossAxisSpacing: UiSpacing.small,
                   itemCount: count,
                   itemBuilder: (context, index) => widget.online
                       ? _OnlineTagCard(work: _onlineWorks[index])
@@ -138,7 +135,8 @@ class _LocalTagCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
+          AspectRatio(
+            aspectRatio: 4 / 3,
             child: Container(
               decoration: BoxDecoration(
                 color: scheme.primaryContainer,
@@ -165,9 +163,9 @@ class _LocalTagCard extends StatelessWidget {
           ),
           const SizedBox(height: UiSpacing.xSmall),
           Text(work.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13)),
+              maxLines: null,
+              style: const TextStyle(
+                  fontSize: 13, height: 1.3, fontWeight: FontWeight.w500)),
         ],
       ),
     );
@@ -191,7 +189,8 @@ class _OnlineTagCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
+          AspectRatio(
+            aspectRatio: 4 / 3,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(UiRadii.control),
               child: CachedNetworkImage(
@@ -209,9 +208,9 @@ class _OnlineTagCard extends StatelessWidget {
           ),
           const SizedBox(height: UiSpacing.xSmall),
           Text(work.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13)),
+              maxLines: null,
+              style: const TextStyle(
+                  fontSize: 13, height: 1.3, fontWeight: FontWeight.w500)),
         ],
       ),
     );

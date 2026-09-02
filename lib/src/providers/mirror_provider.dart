@@ -53,11 +53,19 @@ class MirrorProvider extends ChangeNotifier {
 
   /// 内置镜像全集（用户需求 2026-09-01：预置 asmr-100/200/300）。
   static const List<MirrorInstance> builtinMirrors = [
-    MirrorInstance(host: 'api.asmr.one', label: 'asmr.one（默认）'),
-    MirrorInstance(host: 'asmr-100.one', label: 'asmr-100 镜像'),
-    MirrorInstance(host: 'asmr-200.one', label: 'asmr-200 镜像'),
-    MirrorInstance(host: 'asmr-300.one', label: 'asmr-300 镜像'),
+    MirrorInstance(host: 'api.asmr.one', label: 'asmr.one（官方）'),
+    MirrorInstance(host: 'api.asmr-100.com', label: 'asmr-100 镜像'),
+    MirrorInstance(host: 'api.asmr-200.com', label: 'asmr-200 镜像'),
+    MirrorInstance(host: 'api.asmr-300.com', label: 'asmr-300 镜像'),
   ];
+
+  /// v1.0.x 遗留的虚构镜像域名（NXDOMAIN，测速/登录全挂）。
+  /// 实机反馈 2026-09-02：预置列表曾写 asmr-100.one 等不存在域名。
+  static const Map<String, String> _legacyHostFix = {
+    'asmr-100.one': 'api.asmr-100.com',
+    'asmr-200.one': 'api.asmr-200.com',
+    'asmr-300.one': 'api.asmr-300.com',
+  };
 
   final KikoeruApiService api = KikoeruApiService();
 
@@ -101,8 +109,11 @@ class MirrorProvider extends ChangeNotifier {
         .map((json) {
           try {
             final map = jsonDecode(json) as Map<String, dynamic>;
+            var host = map['host'] as String;
+            // 历史坏域名迁移 → 官方真实镜像。
+            host = _legacyHostFix[host] ?? host;
             return MirrorInstance(
-              host: map['host'] as String,
+              host: host,
               label: map['label'] as String,
               enabled: map['enabled'] != false,
             );
@@ -111,6 +122,11 @@ class MirrorProvider extends ChangeNotifier {
           }
         })
         .whereType<MirrorInstance>()
+        .toList();
+    // 去重（迁移后可能与内置镜像重复）。
+    final seen = <String>{};
+    _mirrors = _mirrors
+        .where((m) => seen.add(m.host))
         .toList();
     if (_mirrors.isEmpty) {
       _mirrors = builtinMirrors;
@@ -125,7 +141,11 @@ class MirrorProvider extends ChangeNotifier {
 
     _autoSelect = prefs.getBool(_autoSelectKey) ?? true;
     _pinnedHost = prefs.getString(_pinnedHostKey);
+    if (_pinnedHost != null) {
+      _pinnedHost = _legacyHostFix[_pinnedHost] ?? _pinnedHost;
+    }
     _activeHost = prefs.getString(_activeHostKey) ?? _pinnedHost ?? defaultHost;
+    _activeHost = _legacyHostFix[_activeHost] ?? _activeHost;
     if (!_mirrors.any((m) => m.host == _activeHost)) {
       _activeHost = defaultHost;
     }

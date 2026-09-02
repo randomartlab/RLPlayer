@@ -457,8 +457,10 @@ class _RelatedCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 与在线推荐卡/详情页头图统一 4:3 横版（实机反馈：本地推荐
+            // 封面竖版是遗留比例）。
             AspectRatio(
-              aspectRatio: 0.72,
+              aspectRatio: 4 / 3,
               child: WorkCover(work: work),
             ),
             const SizedBox(height: UiSpacing.xSmall),

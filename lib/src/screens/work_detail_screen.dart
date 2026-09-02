@@ -271,8 +271,9 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(
-            hintText: '如 RJ123456',
-            helperText: '文件夹内无 RJ 信息时手动补充，可拉取网络元数据与封面',
+            hintText: '如 123456 或 RJ123456（可直接填数字）',
+            helperText: '文件夹内无 RJ 信息时手动补充；直接填数字即可，'
+                '自动补 RJ 前缀',
           ),
         ),
         actions: [
@@ -288,7 +289,16 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     );
     debugPrint('[SetRJ] 用户输入: ${rj == null ? 'null' : '[$rj]'} '
         '(workId=${widget.work.id})');
-    if (rj == null || !RegExp(r'^rj\d{4,}$', caseSensitive: false).hasMatch(rj)) {
+    // 允许直接填数字（自动补 RJ 前缀，2026-09-02 用户需求）。
+    String? normalized = rj;
+    if (normalized != null) {
+      if (RegExp(r'^\d{4,}$').hasMatch(normalized.trim())) {
+        normalized = 'RJ${normalized.trim()}';
+      }
+    }
+    if (normalized == null ||
+        !RegExp(r'^rj\d{4,}$', caseSensitive: false)
+            .hasMatch(normalized)) {
       debugPrint('[SetRJ] 格式校验失败');
       if (rj != null) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -298,8 +308,8 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     }
     final library = context.read<LibraryProvider>();
     try {
-      await library.setWorkRjCode(widget.work.id, rj);
-      debugPrint('[SetRJ] DB 写入成功 $rj');
+      await library.setWorkRjCode(widget.work.id, normalized);
+      debugPrint('[SetRJ] DB 写入成功 $normalized');
     } catch (e) {
       debugPrint('[SetRJ] DB 写入异常: $e');
     }
@@ -312,7 +322,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     // 拉取元数据/封面 + 在线相关推荐；完成后反馈。
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('已保存 RJ：$rj，正在拉取网络信息…'),
+          content: Text('已保存 RJ：$normalized，正在拉取网络信息…'),
           duration: const Duration(seconds: 2)));
     }
     await _loadNetMeta(forceRefresh: true);

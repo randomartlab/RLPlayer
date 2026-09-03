@@ -282,7 +282,8 @@ class _SearchScreenState extends State<SearchScreen> {
                         },
                         displayStringForOption: (o) => o['name'] as String,
                         onSelected: (o) {
-                          // RawAutocomplete 已设置输入框文本，此处无需再设。
+                          // 同步外层 controller（底部「添加」按钮读取它）。
+                          controller.text = o['name'] as String? ?? '';
                           setSheet(() {});
                         },
                         optionsViewBuilder: (context, onSelected, options) {
@@ -338,6 +339,9 @@ class _SearchScreenState extends State<SearchScreen> {
                             controller: textController,
                             focusNode: focusNode,
                             autofocus: true,
+                            onChanged: (_) {
+                              controller.text = textController.text;
+                            },
                             decoration: InputDecoration(
                               hintText: type == SearchConditionType.rj
                                   ? '输入数字自动补 RJ（如 416816）'
@@ -356,7 +360,8 @@ class _SearchScreenState extends State<SearchScreen> {
                                   : null,
                             ),
                             onSubmitted: (text) {
-                              var raw = text.trim();
+                              controller.text = textController.text;
+                              var raw = controller.text.trim();
                               if (raw.isEmpty) return;
                               if (type == SearchConditionType.rj &&
                                   RegExp(r'^\d{4,}$').hasMatch(raw)) {

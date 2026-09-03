@@ -17,7 +17,10 @@ enum _LocalViewMode { all, identified, unident }
 
 /// Tab3 我的页（2026-09-03 M1：状态清单 tab + 本地库视角切换）。
 class MyScreen extends StatefulWidget {
-  const MyScreen({super.key});
+  const MyScreen({super.key, this.onOpenSettings});
+
+  /// 跳到主框架「设置」Tab（2026-09-03）。
+  final VoidCallback? onOpenSettings;
 
   @override
   State<MyScreen> createState() => _MyScreenState();
@@ -47,6 +50,14 @@ class _MyScreenState extends State<MyScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: Text('我的', style: UiTextStyles.pageTitle),
+          actions: [
+            if (widget.onOpenSettings != null)
+              IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: '设置',
+                onPressed: widget.onOpenSettings,
+              ),
+          ],
           bottom: const TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,

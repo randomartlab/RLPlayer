@@ -33,11 +33,14 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
-    _screens = const [
-      WorksScreen(key: PageStorageKey('works_screen')),
-      SearchScreen(key: PageStorageKey('search_screen')),
-      MyScreen(key: PageStorageKey('my_screen')),
-      SettingsScreen(key: PageStorageKey('settings_screen')),
+    _screens = [
+      const WorksScreen(key: PageStorageKey('works_screen')),
+      const SearchScreen(key: PageStorageKey('search_screen')),
+      MyScreen(
+        key: const PageStorageKey('my_screen'),
+        onOpenSettings: () => _goTab(3),
+      ),
+      const SettingsScreen(key: PageStorageKey('settings_screen')),
     ];
   }
 
@@ -67,6 +70,13 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _handleDestinationSelected(int index) {
+    _switchTab(index);
+  }
+
+  /// 供子页（如我的页齿轮）切到指定主 Tab（2026-09-03）。
+  void _goTab(int index) => _switchTab(index);
+
+  void _switchTab(int index) {
     if (_currentIndex == index) return;
     setState(() => _currentIndex = index);
   }

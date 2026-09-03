@@ -281,9 +281,66 @@ class SettingsScreen extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: UiSpacing.medium),
+          _SettingsCard(
+            title: '数据与历史',
+            children: [
+              ListTile(
+                leading: _LeadingIcon(icon: Icons.history, context: context),
+                title: const Text('清空播放历史'),
+                subtitle: const Text('删除全部断点与播放记录（本地音频不受影响）'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _confirmClearHistory(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: UiSpacing.medium),
+          _SettingsCard(
+            title: '关于',
+            children: [
+              ListTile(
+                leading:
+                    _LeadingIcon(icon: Icons.info_outline, context: context),
+                title: const Text('RLPlayer'),
+                subtitle: const Text('v1.3.7 · ASMR/同人音声本地播放器\n致敬 kikoeru / kikoflu 的开源设计'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                      builder: (context) => const HelpScreen()),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  /// 确认清空播放历史（2026-09-03）。
+  Future<void> _confirmClearHistory(BuildContext context) async {
+    final library = context.read<LibraryProvider>();
+    final db = library.database;
+    if (db == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('清空播放历史？'),
+        content: const Text('此操作会删除全部断点续播位置与播放记录，不可恢复。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('清空')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await db.clearHistory();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('播放历史已清空')));
   }
 
   /// 扫描根目录管理（多目录增删，PRD §5.10）。

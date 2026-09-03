@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/online_models.dart';
+import '../models/search_query.dart';
 import '../providers/library_provider.dart';
 import '../providers/mirror_provider.dart';
 import '../utils/ui_tokens.dart';
@@ -304,6 +305,219 @@ class _OnlineResultTile extends StatelessWidget {
               builder: (_) => OnlineWorkDetailScreen(work: work)));
         }
       },
+    );
+  }
+}
+
+
+/// 全网组合检索（2026-09-03 M2）：多 include 条件。
+///
+/// 服务端不支持 OR/组合检索，采用「内存合并」策略：
+/// - AND：取首条件候选（各 40/条件）→ 其余 include 在 OnlineWork
+///   字段内存过滤 → exclude 过滤
+/// - OR：各 include 分别拉取（每 40）→ 并集去重 → exclude 过滤
+/// 提示首条件不足时结果可能不全，建议收窄条件。
+class OnlineCombineSearch extends StatefulWidget {
+  const OnlineCombineSearch({
+    super.key,
+    required this.includes,
+    required this.excludes,
+    required this.combine,
+  });
+
+  final List<SearchCondition> includes;
+  final List<SearchCondition> excludes;
+  final SearchCombine combine;
+
+  @override
+  State<OnlineCombineSearch> createState() => _OnlineCombineSearchState();
+}
+
+class _OnlineCombineSearchState extends State<OnlineCombineSearch> {
+  List<OnlineWork> _results = const [];
+  bool _loading = false;
+  String? _error;
+  String _info = '';
+
+  static bool _matchOnline(OnlineWork w, SearchCondition c) {
+    final v = c.value.trim().toLowerCase();
+    if (v.isEmpty) return false;
+    final rj = (w.sourceId ?? '').toLowerCase();
+    switch (c.type) {
+      case SearchConditionType.rj:
+        final target = (c.displayValue).toLowerCase();
+        return rj == target || rj.contains(v);
+      case SearchConditionType.tag:
+        return w.tags.any((t) => t.toLowerCase().contains(v));
+      case SearchConditionType.circle:
+        return (w.circleName?.toLowerCase().contains(v) ?? false);
+      case SearchConditionType.va:
+        return w.vas.any((n) => n.toLowerCase().contains(v));
+      case SearchConditionType.keyword:
+        return w.title.toLowerCase().contains(v) ||
+            (w.circleName?.toLowerCase().contains(v) ?? false) ||
+            w.vas.any((n) => n.toLowerCase().contains(v)) ||
+            w.tags.any((t) => t.toLowerCase().contains(v)) ||
+            rj.contains(v);
+    }
+  }
+
+  Future<List<OnlineWork>> _fetchFor(SearchCondition c) async {
+    final mirror = context.read<MirrorProvider>();
+    final api = mirror.api;
+    // tag/circle/va 优先定位 id（更精准）。
+    if (c.type == SearchConditionType.tag ||
+        c.type == SearchConditionType.circle ||
+        c.type == SearchConditionType.va) {
+      final tables = switch (c.type) {
+        SearchConditionType.tag => await api.getAllTags(),
+        SearchConditionType.circle => await api.getAllCircles(),
+        _ => await api.getAllVas(),
+      };
+      final match = tables
+          .where((m) =>
+              ((m['name'] as String?) ?? '').toLowerCase() ==
+              c.value.toLowerCase())
+          .toList();
+      if (match.isNotEmpty) {
+        return switch (c.type) {
+          SearchConditionType.tag =>
+            await api.searchWorks(match.first['name'] as String, pageSize: 40),
+          SearchConditionType.circle =>
+            await api.getCircleWorksPage(match.first['id'] as int, 1,
+                pageSize: 40),
+          _ => await api
+              .getVaWorks(match.first['id'] as String, pageSize: 40),
+        };
+      }
+    }
+    // 回退：名字关键词全文检索。
+    return api.searchWorks(c.value, pageSize: 40);
+  }
+
+  Future<void> _run() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final inc = widget.includes;
+      if (inc.isEmpty) {
+        setState(() {
+          _loading = false;
+          _results = const [];
+        });
+        return;
+      }
+      final List<OnlineWork> base;
+      if (widget.combine == SearchCombine.and) {
+        // 主集 = 第一个条件候选，其余内存过滤。
+        var pool = await _fetchFor(inc.first);
+        for (final c in inc.skip(1)) {
+          pool = pool.where((w) => _matchOnline(w, c)).toList();
+        }
+        base = pool;
+      } else {
+        // OR：分别拉取 → 并集去重。
+        final merged = <int, OnlineWork>{};
+        for (final c in inc) {
+          for (final w in await _fetchFor(c)) {
+            merged[w.id] = w;
+          }
+        }
+        base = merged.values.toList();
+      }
+      final excludes = widget.excludes;
+      final result = base
+          .where((w) => !excludes.any((c) => _matchOnline(w, c)))
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _results = result;
+        _loading = false;
+        _info = '基于条件前 40 条/条件${inc.length > 1 ? "（收窄条件更准）" : ""}';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _run();
+  }
+
+  @override
+  void didUpdateWidget(OnlineCombineSearch old) {
+    super.didUpdateWidget(old);
+    if (old.combine != widget.combine ||
+        old.includes.length != widget.includes.length ||
+        old.excludes.length != widget.excludes.length) {
+      _run();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final library = context.watch<LibraryProvider>();
+    final localRjs = library.works
+        .map((w) => w.rjCode?.toUpperCase())
+        .whereType<String>()
+        .toSet();
+
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+          child: Padding(
+              padding: const EdgeInsets.all(UiSpacing.large),
+              child: Text('加载失败：$_error',
+                  style: TextStyle(color: scheme.error))));
+    }
+    if (_results.isEmpty) {
+      return Center(
+          child: Padding(
+              padding: const EdgeInsets.all(UiSpacing.large),
+              child: Text('未找到满足条件的在线作品',
+                  style: TextStyle(color: scheme.onSurfaceVariant))));
+    }
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: UiSpacing.medium),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(_info,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 11, color: scheme.onSurfaceVariant)),
+              ),
+              Text('${_results.length}',
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(UiSpacing.small),
+            itemCount: _results.length,
+            itemBuilder: (context, index) => _OnlineResultTile(
+                work: _results[index], localRjs: localRjs),
+          ),
+        ),
+      ],
     );
   }
 }

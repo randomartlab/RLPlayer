@@ -382,7 +382,10 @@ class _SearchScreenState extends State<SearchScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(
                 UiSpacing.medium, UiSpacing.xSmall, UiSpacing.medium, 0),
-            child: Row(
+            child: Wrap(
+              spacing: UiSpacing.medium,
+              runSpacing: UiSpacing.xSmall,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 SegmentedButton<bool>(
                   segments: const [
@@ -390,17 +393,22 @@ class _SearchScreenState extends State<SearchScreen> {
                     ButtonSegment(value: true, label: Text('全网')),
                   ],
                   selected: {_onlineMode},
+                  style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact),
                   onSelectionChanged: (v) =>
                       setState(() => _onlineMode = v.first),
                 ),
-                const Spacer(),
                 if (!_onlineMode && _conditions.isNotEmpty)
                   SegmentedButton<SearchCombine>(
                     segments: const [
-                      ButtonSegment(value: SearchCombine.and, label: Text('全部满足')),
-                      ButtonSegment(value: SearchCombine.or, label: Text('任一满足')),
+                      ButtonSegment(
+                          value: SearchCombine.and, label: Text('全部满足')),
+                      ButtonSegment(
+                          value: SearchCombine.or, label: Text('任一满足')),
                     ],
                     selected: {_combine},
+                    style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact),
                     onSelectionChanged: (v) =>
                         setState(() => _combine = v.first),
                   ),
@@ -489,15 +497,29 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildBody(BuildContext context, ColorScheme scheme) {
     if (_onlineMode) {
+      final inc = _conditions.where((c) => !c.exclude).toList();
+      final exc = _conditions.where((c) => c.exclude).toList();
+      // 多 include → 组合检索（内存合并 AND/OR）。
+      if (inc.length > 1) {
+        return OnlineCombineSearch(
+          includes: inc,
+          excludes: exc,
+          combine: _combine,
+        );
+      }
       // 全网单条件：取第一个 include（keyword 常用）；OnlineSearchSection
       // 的 conditionType 与 query 映射。
-      final inc = _conditions.where((c) => !c.exclude).toList();
       final keyword = inc.isNotEmpty && inc.first.type == SearchConditionType.keyword
           ? inc.first.value
           : '';
       final type = inc.isNotEmpty && inc.first.type != SearchConditionType.keyword
           ? inc.first.type
           : SearchConditionType.keyword;
+      if (exc.isNotEmpty && inc.isNotEmpty) {
+        // 单条件 + 排除：仍用组合组件（exclude 过滤）。
+        return OnlineCombineSearch(
+            includes: inc, excludes: exc, combine: _combine);
+      }
       return OnlineSearchSection(
         conditionType: switch (type) {
           SearchConditionType.rj => 1,
@@ -541,7 +563,7 @@ class _SearchScreenState extends State<SearchScreen> {
             ListTile(
               dense: true,
               leading: const Icon(Icons.history, size: 18),
-              title: Text(h, maxLines: 1, overflow: TextOverflow.ellipsis),
+              title: Text(h, maxLines: 2, overflow: TextOverflow.ellipsis),
               onTap: () => _restoreHistory(h),
             ),
         ],

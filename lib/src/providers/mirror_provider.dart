@@ -333,6 +333,32 @@ class MirrorProvider extends ChangeNotifier {
 
   // ---- 登录 / 登出（Token 加密存储，PRD 决策 2） ----
 
+  /// 在任一已登录镜像上执行需登录的请求（收藏等，2026-09-03）。
+  /// 返回任务结果；无登录会话返回 null。
+  Future<T?> withLoginHost<T>(
+      Future<T> Function(KikoeruApiService api) task) async {
+    String? target;
+    if (_defaultToken != null && _defaultToken!.isNotEmpty) {
+      target = defaultHost;
+    } else {
+      for (final e in _customTokens.entries) {
+        if (e.value.isNotEmpty) {
+          target = e.key;
+          break;
+        }
+      }
+    }
+    if (target == null) return null;
+    final prev = api.host;
+    try {
+      api.switchHost(target,
+          target == defaultHost ? _defaultToken : _customTokens[target]);
+      return await task(api);
+    } finally {
+      api.switchHost(prev);
+    }
+  }
+
   /// 作品评论拉取：优先走「当前镜像已登录」的会话；若当前镜像未登录
   /// 但其他镜像登录过（自动测速切换场景），临时用登录过的镜像请求并
   /// 恢复（实机反馈 2026-09-02：one 登录后激活镜像切走 → 评论 404）。

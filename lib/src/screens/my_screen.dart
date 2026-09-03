@@ -6,6 +6,7 @@ import '../providers/library_provider.dart';
 import '../utils/ui_tokens.dart';
 import '../widgets/enhanced_work_card.dart';
 import 'downloads_screen.dart';
+import 'favorites_tab.dart';
 import 'history_tab.dart';
 import 'playlists_screen.dart';
 import 'status_tab.dart';
@@ -42,7 +43,7 @@ class _MyScreenState extends State<MyScreen> {
     final scheme = Theme.of(context).colorScheme;
 
     return DefaultTabController(
-      length: 6,
+      length: 7,
       child: Scaffold(
         appBar: AppBar(
           title: Text('我的', style: UiTextStyles.pageTitle),
@@ -51,6 +52,7 @@ class _MyScreenState extends State<MyScreen> {
             tabAlignment: TabAlignment.start,
             tabs: [
               Tab(text: '状态'),
+              Tab(text: '收藏'),
               Tab(text: '本地库'),
               Tab(text: '历史'),
               Tab(text: '播放列表'),
@@ -62,6 +64,7 @@ class _MyScreenState extends State<MyScreen> {
         body: TabBarView(
           children: [
             const StatusTab(),
+            const FavoritesTab(),
             // 本地库：视角切换（全部/已识别/未识别）。
             Column(
               children: [

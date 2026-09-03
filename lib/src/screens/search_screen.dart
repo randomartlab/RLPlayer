@@ -574,12 +574,12 @@ class _SearchScreenState extends State<SearchScreen> {
                   onSelectionChanged: (v) =>
                       setState(() => _onlineMode = v.first),
                 ),
-                if (!_onlineMode)
-                  Tooltip(
-                    message: _combine == SearchCombine.and
-                        ? '全部条件同时满足'
-                        : '任一条件满足即命中（OR）',
-                    child: SegmentedButton<SearchCombine>(
+                // AND/OR 常显（本地与全网一致，2026-09-03 真机反馈 #1）。
+                Tooltip(
+                  message: _combine == SearchCombine.and
+                      ? '全部条件同时满足'
+                      : '任一条件满足即命中（OR）',
+                  child: SegmentedButton<SearchCombine>(
                       segments: const [
                         ButtonSegment(
                             value: SearchCombine.and, label: Text('全部满足 AND')),

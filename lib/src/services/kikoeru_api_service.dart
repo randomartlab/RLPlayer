@@ -386,6 +386,52 @@ class KikoeruApiService {
   Future<void> removeFromFavorites(int workId) =>
       _dio.delete('/api/favourites/$workId');
 
+  // ---- 作品标记/进度/评分（kikoeru /api/review 协议，2026-09-03）----
+  // progress 取值与 kikoflu 一致：marked(想听)/listening/replayed/listened 见下。
+
+  /// 写当前用户对该作品的标记（进度）+ 评分 + 评语。
+  Future<void> saveReviewProgress(
+    int workId, {
+    String? progress,
+    int? rating,
+    String? reviewText,
+  }) async {
+    final data = <String, dynamic>{'work_id': workId};
+    if (progress != null) data['progress'] = progress;
+    if (rating != null) data['rating'] = rating;
+    if (reviewText != null) data['review_text'] = reviewText;
+    await _dio.put('/api/review', data: data);
+  }
+
+  /// 移除当前用户对该作品的标记（进度/评分/评语一并清除）。
+  Future<void> deleteReview(int workId) async {
+    await _dio.delete('/api/review', queryParameters: {'work_id': workId});
+  }
+
+  /// 当前用户标记列表（我的收藏/进度；filter 可选：marked/listening/…）。
+  Future<List<Map<String, dynamic>>> fetchMyReviews({
+    int page = 1,
+    int pageSize = 20,
+    String? filter,
+  }) async {
+    final query = <String, dynamic>{
+      'page': page,
+      'pageSize': pageSize,
+      'order': 'updated_at',
+      'sort': 'desc',
+    };
+    if (filter != null && filter.isNotEmpty) query['filter'] = filter;
+    final response = await _dio.get('/api/review', queryParameters: query);
+    final data = response.data;
+    if (data is Map<String, dynamic>) {
+      for (final key in const ['reviews', 'works', 'data', 'items', 'list']) {
+        final list = data[key];
+        if (list is List) return list.cast<Map<String, dynamic>>();
+      }
+    }
+    return const [];
+  }
+
   // ---- 媒体 URL（token 走查询参数，播放器无需 Authorization header） ----
 
   /// 下载封面字节（网络封面兜底落盘用）。

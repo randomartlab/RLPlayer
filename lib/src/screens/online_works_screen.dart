@@ -6,6 +6,7 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:provider/provider.dart';
 
 import '../models/online_models.dart';
+import '../providers/library_provider.dart';
 import '../providers/mirror_provider.dart';
 import '../providers/online_provider.dart';
 import '../utils/ui_tokens.dart';
@@ -18,11 +19,15 @@ import 'online_work_detail_screen.dart';
 /// - 已下载作品角标 → 点击进入本地详情（M4 版）；未下载 → 在线详情；
 /// - 断网/失败错误态不崩溃（验收 #15）。
 class OnlineWorksScreen extends StatefulWidget {
-  const OnlineWorksScreen({super.key, this.circleId, this.circleTitle});
+  const OnlineWorksScreen(
+      {super.key, this.circleId, this.circleTitle, this.likedOnly = false});
 
   /// 社团模式：传入则列出该社团全部作品（点社团名进入，用户需求 2026-09-02）。
   final int? circleId;
   final String? circleTitle;
+
+  /// 只显示本机 ♥ 喜欢（作品页过滤，2026-09-03）。
+  final bool likedOnly;
 
   @override
   State<OnlineWorksScreen> createState() => _OnlineWorksScreenState();
@@ -319,6 +324,40 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
       );
     }
 
+    // ♥ 喜欢过滤（作品页过滤；仅对全局在线流，社团模式不受影响）。
+    final likedOnly = widget.likedOnly;
+    final library = context.watch<LibraryProvider>();
+    final likedIds = library.likedRjCodes
+        .map((rj) => rj.replaceFirst(RegExp(r'^(RJ|BJ|VJ)', caseSensitive: false), ''))
+        .where((n) => n.isNotEmpty)
+        .toSet();
+    final List<OnlineWork> works = likedOnly
+        ? online.works
+            .where((w) => likedIds.contains(w.id.toString()))
+            .toList()
+        : online.works;
+
+    if (likedOnly && works.isEmpty && !online.loading) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(UiSpacing.xLarge),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.favorite_border,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+              const SizedBox(height: UiSpacing.medium),
+              Text('没有 ♥ 喜欢的在线作品',
+                  style: TextStyle(
+                      color:
+                          Theme.of(context).colorScheme.onSurfaceVariant)),
+            ],
+          ),
+        ),
+      );
+    }
+
     // 错误态（断网/镜像不可达）：保留页面结构不崩溃（验收 #15）。
     if (online.error != null && online.works.isEmpty) {
       return Center(
@@ -367,17 +406,16 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
         child: ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.symmetric(vertical: UiSpacing.small),
-          itemCount: online.works.length + (online.hasMore ? 1 : 0),
+          itemCount: works.length + (!likedOnly && online.hasMore ? 1 : 0),
           itemBuilder: (context, index) {
-            if (index >= online.works.length) {
+            if (index >= works.length) {
               return _LoadMoreFooter(
                 loading: online.loading,
                 hasMore: online.hasMore,
                 onLoad: () => context.read<OnlineProvider>().loadMore(),
               );
             }
-            return _OnlineWorkCard(
-                work: online.works[index], mode: CardMode.list);
+            return _OnlineWorkCard(work: works[index], mode: CardMode.list);
           },
         ),
       );
@@ -392,9 +430,9 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
         crossAxisCount: small ? 3 : 2,
         mainAxisSpacing: UiSpacing.small,
         crossAxisSpacing: UiSpacing.small,
-        itemCount: online.works.length + (online.hasMore ? 1 : 0),
+        itemCount: works.length + (!likedOnly && online.hasMore ? 1 : 0),
         itemBuilder: (context, index) {
-          if (index >= online.works.length) {
+          if (index >= works.length) {
             return _LoadMoreFooter(
               loading: online.loading,
               hasMore: online.hasMore,
@@ -402,7 +440,7 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
             );
           }
           return _OnlineWorkCard(
-              work: online.works[index],
+              work: works[index],
               mode: small ? CardMode.compact : CardMode.medium);
         },
       ),

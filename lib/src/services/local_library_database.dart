@@ -16,7 +16,7 @@ class LocalLibraryDatabase {
   LocalLibraryDatabase._(this._db);
 
   static const String _dbName = 'kiko_local.db';
-  static const int _dbVersion = 9;
+  static const int _dbVersion = 10;
 
   /// 全部迁移逻辑的单一来源（v1 之后每版增量；onCreate 与 onUpgrade 共用，
   /// 杜绝 schema 漂移——修复“全新安装缺列”致命 bug 2026-09-02）。
@@ -83,6 +83,15 @@ class LocalLibraryDatabase {
           'work_title TEXT, cover_path TEXT, sort_index INTEGER NOT NULL, '
           'FOREIGN KEY(playlist_id) REFERENCES playlists(id) '
           'ON DELETE CASCADE)');
+    }
+    if (oldVersion < 10) {
+      // v10(2026-09-03): ① 旧状态名 wantListen → marked（对齐 kikoeru 协议五态）；
+      // ② 本机独立喜欢（不与 one 站收藏混）。
+      try {
+        await db.execute(
+"UPDATE work_status SET status = 'marked' WHERE status = 'wantListen'");
+      } catch (_) {}
+      await db.execute('CREATE TABLE IF NOT EXISTS local_likes (rj_code TEXT PRIMARY KEY, title TEXT, added_at INTEGER NOT NULL)');
     }
     if (oldVersion < 9) {
       // v9: 作品状态（想听/在听/听过 + 我的评分，2026-09-02）。
@@ -174,6 +183,9 @@ class LocalLibraryDatabase {
     // v9: 作品状态。
     await db.execute(
         'CREATE TABLE IF NOT EXISTS work_status (rj_code TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT \'none\', rating INTEGER, updated_at INTEGER NOT NULL)');
+    // v10: 本机喜欢（独立于 one 站收藏）。
+    await db.execute(
+        'CREATE TABLE IF NOT EXISTS local_likes (rj_code TEXT PRIMARY KEY, title TEXT, added_at INTEGER NOT NULL)');
   }
 
   final Database _db;
@@ -454,6 +466,34 @@ class LocalLibraryDatabase {
   /// 全部状态（我的页列表用）。
   Future<List<Map<String, dynamic>>> allWorkStatus() async {
     return _db.query('work_status', orderBy: 'updated_at DESC');
+  }
+
+  // ---- 本机喜欢（local_likes，v10）----
+
+  Future<bool> isLiked(String rjCode) async {
+    final rows = await _db.query('local_likes',
+        where: 'rj_code = ?', whereArgs: [rjCode], limit: 1);
+    return rows.isNotEmpty;
+  }
+
+  Future<void> setLiked(String rjCode, String title, {required bool liked}) async {
+    if (liked) {
+      await _db.insert(
+          'local_likes',
+          {
+            'rj_code': rjCode,
+            'title': title,
+            'added_at': DateTime.now().millisecondsSinceEpoch,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace);
+    } else {
+      await _db
+          .delete('local_likes', where: 'rj_code = ?', whereArgs: [rjCode]);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> allLikes() async {
+    return _db.query('local_likes', orderBy: 'added_at DESC');
   }
 
   /// 全部 NetMeta（本地排序/筛选批量加载，2026-09-02）。

@@ -359,6 +359,55 @@ class MirrorProvider extends ChangeNotifier {
     }
   }
 
+  /// 登录态标记/评分写入（/api/review）。返回是否成功（未登录返回 false）。
+  Future<bool> saveReviewProgress(
+    int workId, {
+    String? progress,
+    int? rating,
+    String? reviewText,
+  }) async {
+    final ok = await withLoginHost((api) async {
+      await api.saveReviewProgress(
+        workId,
+        progress: progress,
+        rating: rating,
+        reviewText: reviewText,
+      );
+      return true;
+    });
+    return ok ?? false;
+  }
+
+  /// 登录态移除标记。返回是否成功。
+  Future<bool> deleteReview(int workId) async {
+    final ok = await withLoginHost((api) async {
+      await api.deleteReview(workId);
+      return true;
+    });
+    return ok ?? false;
+  }
+
+  /// 拉取当前用户全部标记（分页合并）；未登录返回空表。
+  Future<List<Map<String, dynamic>>> fetchMyReviewsAll({
+    int pageSize = 50,
+    String? filter,
+  }) async {
+    final list = await withLoginHost((api) async {
+      final out = <Map<String, dynamic>>[];
+      var page = 1;
+      while (page <= 50) {
+        final items = await api.fetchMyReviews(
+            page: page, pageSize: pageSize, filter: filter);
+        if (items.isEmpty) break;
+        out.addAll(items);
+        if (items.length < pageSize) break;
+        page++;
+      }
+      return out;
+    });
+    return list ?? const [];
+  }
+
   /// 作品评论拉取：优先走「当前镜像已登录」的会话；若当前镜像未登录
   /// 但其他镜像登录过（自动测速切换场景），临时用登录过的镜像请求并
   /// 恢复（实机反馈 2026-09-02：one 登录后激活镜像切走 → 评论 404）。

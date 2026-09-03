@@ -32,11 +32,13 @@ enum _GridViewMode { large, small, list }
 class _WorksScreenState extends State<WorksScreen> {
   int _sourceIndex = 0; // 0 = 本地（默认），1 = 在线
   _GridViewMode _viewMode = _GridViewMode.large;
+  bool _likesOnly = false;
 
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryProvider>();
     final works = library.visibleWorks;
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -46,29 +48,83 @@ class _WorksScreenState extends State<WorksScreen> {
           child: Padding(
             padding:
                 const EdgeInsets.symmetric(horizontal: UiSpacing.medium),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(value: 0, label: Text('本地')),
-                  ButtonSegment(value: 1, label: Text('在线')),
-                ],
-                selected: {_sourceIndex},
-                onSelectionChanged: (selection) =>
-                    setState(() => _sourceIndex = selection.first),
-              ),
+            child: Row(
+              children: [
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(value: 0, label: Text('本地')),
+                    ButtonSegment(value: 1, label: Text('在线')),
+                  ],
+                  selected: {_sourceIndex},
+                  style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact),
+                  onSelectionChanged: (selection) =>
+                      setState(() => _sourceIndex = selection.first),
+                ),
+                const SizedBox(width: UiSpacing.medium),
+                // ♥ 喜欢过滤（两处都要：本地/在线流，2026-09-03）。
+                FilterChip(
+                  avatar: Icon(
+                    _likesOnly ? Icons.favorite : Icons.favorite_border,
+                    size: 15,
+                    color: _likesOnly
+                        ? Colors.pinkAccent
+                        : scheme.onSurfaceVariant,
+                  ),
+                  label: const Text('喜欢', style: TextStyle(fontSize: 12)),
+                  selected: _likesOnly,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onSelected: (v) => setState(() => _likesOnly = v),
+                ),
+              ],
             ),
           ),
         ),
       ),
-      body: _sourceIndex == 1 ? _buildOnlineBody() : _buildLocalBody(works),
-      floatingActionButton: _sourceIndex == 0 && works.isNotEmpty
+      body: _likesOnly
+          ? (_sourceIndex == 1
+              ? const OnlineWorksScreen(likedOnly: true)
+              : _buildLikedLocalBody(context, library))
+          : (_sourceIndex == 1
+              ? _buildOnlineBody()
+              : _buildLocalBody(works)),
+      floatingActionButton: !_likesOnly &&
+              _sourceIndex == 0 &&
+              works.isNotEmpty
           ? FloatingActionButton.small(
               onPressed: () => _playAll(context, works.first),
               tooltip: '随机播放',
               child: const Icon(Icons.shuffle),
             )
           : null,
+    );
+  }
+
+  Widget _buildLikedLocalBody(
+      BuildContext context, LibraryProvider library) {
+    final liked = library.works
+        .where((w) => w.rjCode != null && library.isLiked(w.rjCode!))
+        .toList();
+    final scheme = Theme.of(context).colorScheme;
+    if (liked.isEmpty) {
+      return Center(
+        child: Text('没有 ♥ 喜欢的本地作品',
+            style: TextStyle(color: scheme.onSurfaceVariant)),
+      );
+    }
+    return MasonryGridView.count(
+      key: const PageStorageKey('liked_local_grid'),
+      padding: const EdgeInsets.all(UiSpacing.medium),
+      crossAxisCount: 3,
+      mainAxisSpacing: 12,
+      crossAxisSpacing: 12,
+      itemCount: liked.length,
+      itemBuilder: (context, index) => EnhancedWorkCard(
+        work: liked[index],
+        size: WorkCardSize.compact,
+        onTap: () => _openDetail(context, liked[index]),
+      ),
     );
   }
 

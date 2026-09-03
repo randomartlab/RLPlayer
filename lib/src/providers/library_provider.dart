@@ -28,6 +28,10 @@ class LibraryProvider extends ChangeNotifier {
   List<String> _roots = [];
   List<Work> _works = [];
 
+  // 本机喜欢（独立于 one 站收藏；v10，2026-09-03）。
+  final Set<String> _likedRj = {};
+  final Map<String, String> _likedTitles = {};
+
   /// 扫描状态。
   bool _scanning = false;
   String? _scanningPath;
@@ -35,6 +39,8 @@ class LibraryProvider extends ChangeNotifier {
 
   List<String> get roots => List.unmodifiable(_roots);
   List<Work> get works => List.unmodifiable(_works);
+  Set<String> get likedRjCodes => Set.unmodifiable(_likedRj);
+  Map<String, String> get likedTitles => Map.unmodifiable(_likedTitles);
   bool get scanning => _scanning;
   String? get scanningPath => _scanningPath;
   int get scanningFound => _scanningFound;
@@ -63,6 +69,38 @@ class LibraryProvider extends ChangeNotifier {
     _roots = encoded;
     _db = await LocalLibraryDatabase.open();
     await _reloadWorks();
+    await _loadLikes();
+    notifyListeners();
+  }
+
+  Future<void> _loadLikes() async {
+    final db = _db;
+    if (db == null) return;
+    final rows = await db.allLikes();
+    _likedRj
+      ..clear()
+      ..addAll(rows.map((r) => r['rj_code'] as String));
+    _likedTitles.clear();
+    for (final r in rows) {
+      _likedTitles[r['rj_code'] as String] = (r['title'] ?? '') as String;
+    }
+  }
+
+  bool isLiked(String rjCode) => _likedRj.contains(rjCode);
+
+  /// 切换本机喜欢并落库。
+  Future<void> toggleLike(String rjCode, String title) async {
+    final db = _db;
+    if (db == null) return;
+    final liked = _likedRj.contains(rjCode);
+    await db.setLiked(rjCode, title, liked: !liked);
+    if (liked) {
+      _likedRj.remove(rjCode);
+      _likedTitles.remove(rjCode);
+    } else {
+      _likedRj.add(rjCode);
+      _likedTitles[rjCode] = title;
+    }
     notifyListeners();
   }
 

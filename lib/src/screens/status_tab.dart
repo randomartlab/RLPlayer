@@ -101,9 +101,11 @@ class _StatusTabState extends State<StatusTab> {
       ..sort((a, b) =>
           ((b['updated_at'] as num?) ?? 0)
               .compareTo((a['updated_at'] as num?) ?? 0));
-    final want = group('wantListen');
+    final want = group('marked');
     final listening = group('listening');
     final listened = group('listened');
+    final replay = group('replay');
+    final postponed = group('postponed');
     final rated = rows.where((r) => r['rating'] != null).toList()
       ..sort((a, b) =>
           ((b['updated_at'] as num?) ?? 0)
@@ -152,6 +154,8 @@ class _StatusTabState extends State<StatusTab> {
         section('想听', Icons.headphones_outlined, want),
         section('在听', Icons.play_circle_outline, listening),
         section('听过', Icons.task_alt, listened),
+        section('回味', Icons.replay_circle_filled_outlined, replay),
+        section('搁置', Icons.snooze_outlined, postponed),
         section('已评分', Icons.star_outline, rated),
         const SizedBox(height: UiSpacing.medium),
       ],

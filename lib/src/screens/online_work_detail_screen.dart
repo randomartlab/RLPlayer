@@ -16,6 +16,7 @@ import '../providers/online_provider.dart';
 import '../utils/ui_tokens.dart';
 import '../widgets/comment_section.dart';
 import '../widgets/translation_toggle_button.dart';
+import '../widgets/work_status_bar.dart';
 import 'audio_player_screen.dart';
 import 'package:kiko_local/src/services/translation_service.dart';
 import 'online_works_screen.dart';
@@ -380,8 +381,8 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('已加入下载队列：${detail.rjCode}（${nodes.length} 个文件），到「我的 → 下载管理」查看进度'),
-        duration: const Duration(seconds: 2),
+        content: Text('已加入下载队列：${detail.rjCode}（${nodes.length} 个文件）；完成后可到本地版详情「加入播放列表」'),
+        duration: const Duration(seconds: 3),
       ),
     );
   }
@@ -554,6 +555,15 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
                     if (_lyricCount > 0)
                       _InfoLine(
                           icon: Icons.lyrics_outlined, text: '含歌词'),
+                    // 操作条：标记进度五态/评分/收藏/喜欢（本地+站端双轨，2026-09-03）。
+                    if ((work.sourceId ?? work.rjCode).isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: UiSpacing.medium),
+                        child: WorkStatusBar(
+                          rjCode: work.sourceId ?? work.rjCode,
+                          workTitle: work.title,
+                        ),
+                      ),
                     if (work.tags.isNotEmpty) ...[
                       const SizedBox(height: UiSpacing.medium),
                       Wrap(

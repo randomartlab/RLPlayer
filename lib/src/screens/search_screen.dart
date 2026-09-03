@@ -171,6 +171,19 @@ class _SearchScreenState extends State<SearchScreen> {
     _saveHistory();
   }
 
+  /// 输入框提交：有文字先加 keyword 条件，再执行搜索。
+  void _startSearchFromInput() {
+    final text = _controller.text.trim();
+    if (text.isNotEmpty) {
+      _addCondition(SearchCondition(
+          type: SearchConditionType.keyword, value: text));
+      return; // _addCondition 内部已 _run
+    }
+    if (_onlineMode || _conditions.isNotEmpty) {
+      _run();
+    }
+  }
+
   void _clearConditions() {
     setState(() {
       _conditions.clear();
@@ -255,6 +268,17 @@ class _SearchScreenState extends State<SearchScreen> {
                           ),
                         ],
                       ),
+                      if (!_onlineMode)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            '添加后将按「${_combine == SearchCombine.and ? '全部满足 AND' : '任一满足 OR'}」组合'
+                            '${_combine == SearchCombine.and ? '（可在搜索页切换）' : '（可在搜索页切换）'}',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: scheme.primary),
+                          ),
+                        ),
                       // 类型 chips（Wrap 防大字体溢出）。
                       Wrap(
                         spacing: 6,
@@ -550,19 +574,24 @@ class _SearchScreenState extends State<SearchScreen> {
                   onSelectionChanged: (v) =>
                       setState(() => _onlineMode = v.first),
                 ),
-                if (!_onlineMode && _conditions.isNotEmpty)
-                  SegmentedButton<SearchCombine>(
-                    segments: const [
-                      ButtonSegment(
-                          value: SearchCombine.and, label: Text('全部满足')),
-                      ButtonSegment(
-                          value: SearchCombine.or, label: Text('任一满足')),
-                    ],
-                    selected: {_combine},
-                    style: const ButtonStyle(
-                        visualDensity: VisualDensity.compact),
-                    onSelectionChanged: (v) =>
-                        setState(() => _combine = v.first),
+                if (!_onlineMode)
+                  Tooltip(
+                    message: _combine == SearchCombine.and
+                        ? '全部条件同时满足'
+                        : '任一条件满足即命中（OR）',
+                    child: SegmentedButton<SearchCombine>(
+                      segments: const [
+                        ButtonSegment(
+                            value: SearchCombine.and, label: Text('全部满足 AND')),
+                        ButtonSegment(
+                            value: SearchCombine.or, label: Text('任一满足 OR')),
+                      ],
+                      selected: {_combine},
+                      style: const ButtonStyle(
+                          visualDensity: VisualDensity.compact),
+                      onSelectionChanged: (v) =>
+                          setState(() => _combine = v.first),
+                    ),
                   ),
               ],
             ),
@@ -576,7 +605,16 @@ class _SearchScreenState extends State<SearchScreen> {
                 spacing: 6,
                 runSpacing: 6,
                 children: [
-                  for (var i = 0; i < _conditions.length; i++)
+                  for (var i = 0; i < _conditions.length; i++) ...[
+                    if (i > 0)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Text(_combine == SearchCombine.and ? '且' : '或',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.primary,
+                                fontWeight: FontWeight.w600)),
+                      ),
                     InkWell(
                       borderRadius: BorderRadius.circular(20),
                       onTap: () => _editCondition(i),
@@ -602,6 +640,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         onDeleted: () => _removeCondition(i),
                       ),
                     ),
+                  ],
                 ],
               ),
             ),
@@ -695,19 +734,19 @@ class _SearchScreenState extends State<SearchScreen> {
                     decoration: InputDecoration(
                       hintText: _conditions.isEmpty
                           ? '搜索：关键词 / RJ / 标签 / 社团 / 声优'
-                          : '添加条件值…',
+                          : '输入后点「搜索」添加关键词条件',
                       isDense: true,
-                      prefixIcon: const Icon(Icons.search, size: 20),
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24)),
                     ),
-                    onSubmitted: (text) {
-                      if (text.trim().isEmpty) return;
-                      _addCondition(SearchCondition(
-                          type: SearchConditionType.keyword,
-                          value: text.trim()));
-                    },
+                    onSubmitted: (text) => _startSearchFromInput(),
                   ),
+                ),
+                const SizedBox(width: UiSpacing.xSmall),
+                // 明确「搜索」按钮：提交输入并执行。
+                FilledButton(
+                  onPressed: _startSearchFromInput,
+                  child: const Text('搜索'),
                 ),
                 const SizedBox(width: UiSpacing.xSmall),
                 IconButton.filledTonal(

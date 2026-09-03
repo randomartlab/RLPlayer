@@ -21,6 +21,7 @@ import 'audio_player_screen.dart';
 import 'package:kiko_local/src/services/translation_service.dart';
 import 'online_works_screen.dart';
 import 'subtitle_preview_screen.dart';
+import 'video_preview_screen.dart';
 import 'tag_filter_screen.dart';
 import 'work_detail_screen.dart';
 
@@ -777,6 +778,36 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
         lower.endsWith('.lrc');
   }
 
+  /// 视频文件扩展名（预览播放，2026-09-03）。
+  static bool _isVideo(String name) {
+    final lower = name.toLowerCase();
+    return lower.endsWith('.mp4') ||
+        lower.endsWith('.m4v') ||
+        lower.endsWith('.mkv') ||
+        lower.endsWith('.webm') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.avi') ||
+        lower.endsWith('.wmv') ||
+        lower.endsWith('.flv') ||
+        lower.endsWith('.ts') ||
+        lower.endsWith('.m2ts') ||
+        lower.endsWith('.3gp') ||
+        lower.endsWith('.ogv') ||
+        lower.endsWith('.mpg') ||
+        lower.endsWith('.mpeg');
+  }
+
+  /// 在线视频预览：用流播 URL 交给 VideoPreviewScreen。
+  Future<void> _previewVideo(BuildContext context, node) async {
+    final mirror = context.read<MirrorProvider>();
+    final url = mirror.api.nodeStreamUrl(node);
+    if (!context.mounted) return;
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => VideoPreviewScreen.network(
+          url: url, title: node.title),
+    ));
+  }
+
   /// 在线字幕预览：拉取文件文本后进预览页。
   Future<void> _previewSubtitle(BuildContext context, node) async {
     final mirror = context.read<MirrorProvider>();
@@ -861,7 +892,11 @@ class _OnlineFileTreeState extends State<_OnlineFileTree> {
               scheme: scheme,
               displayName: widget.displayName,
               isPreviewable: _isPreviewable(node.title),
+              isVideo: _isVideo(node.title),
               onPreview: () => _previewSubtitle(context, node),
+              onVideoPreview: _isVideo(node.title)
+                  ? () => _previewVideo(context, node)
+                  : null,
               onPlay: node.isAudio
                   ? () => widget.onTrackTap(
                       widget.flatAudioNodes.indexOf(node))
@@ -925,7 +960,9 @@ class _SubtitleBadgeTile extends StatelessWidget {
     required this.scheme,
     required this.displayName,
     required this.isPreviewable,
+    required this.isVideo,
     required this.onPreview,
+    required this.onVideoPreview,
     required this.onPlay,
     required this.stripExt,
   });
@@ -935,7 +972,9 @@ class _SubtitleBadgeTile extends StatelessWidget {
   final ColorScheme scheme;
   final String Function(String)? displayName;
   final bool isPreviewable;
+  final bool isVideo;
   final VoidCallback onPreview;
+  final VoidCallback? onVideoPreview;
   final VoidCallback? onPlay;
   final String Function(String) stripExt;
 
@@ -956,7 +995,37 @@ class _SubtitleBadgeTile extends StatelessWidget {
         onTap: onPlay,
       );
     }
-    // 字幕/歌词等非音频行。
+    // 字幕/歌词/视频 等非音频行。
+    if (isVideo) {
+      return Container(
+        margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+        decoration: BoxDecoration(
+          color: scheme.errorContainer.withValues(alpha: 0.20),
+          borderRadius: BorderRadius.circular(UiRadii.list),
+        ),
+        child: ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.only(left: 16 + indent, right: 12),
+          leading: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: scheme.errorContainer,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Icon(Icons.videocam,
+                size: 16, color: scheme.onErrorContainer),
+          ),
+          title: Text(
+            displayName?.call(node.title) ?? node.title,
+            maxLines: null,
+            style: const TextStyle(fontSize: 20),
+          ),
+          trailing: Icon(Icons.play_circle_outline,
+              color: scheme.onErrorContainer),
+          onTap: onVideoPreview,
+        ),
+      );
+    }
     final isLrc = node.title.toLowerCase().endsWith('.lrc');
     final captionColor = isLrc ? scheme.tertiary : scheme.secondary;
     final captionOn = isLrc ? scheme.onTertiary : scheme.onSecondary;

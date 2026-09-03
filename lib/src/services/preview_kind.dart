@@ -7,11 +7,12 @@ library;
 
 import 'dart:io';
 
-enum PreviewKind { image, subtitle, other }
+enum PreviewKind { image, subtitle, video, other }
 
 extension PreviewKindX on PreviewKind {
   bool get isImage => this == PreviewKind.image;
   bool get isSubtitle => this == PreviewKind.subtitle;
+  bool get isVideo => this == PreviewKind.video;
 }
 
 /// 读取文件头，返回分类。
@@ -24,6 +25,8 @@ PreviewKind classifyPreviewFile(File file) {
       // 空文件按扩展名兜底。
       return _byExt(file.path);
     }
+    // 0) 视频容器扩展（mp4/mkv 等二进制，无需内容魔数；在文本判断前）。
+    if (_isVideoExt(file.path)) return PreviewKind.video;
     // 1) 图片魔数（内容优先）。
     if (_isImageMagic(head)) return PreviewKind.image;
     // 2) 字幕特征文本：WEBVTT / 时间轴 / LRC 标签。
@@ -66,6 +69,24 @@ bool _looksLikeSubtitle(List<int> head) {
       RegExp(r'\d{1,2}:\d{2}:\d{2}[.,]\d{1,3}\s*-->').hasMatch(text) ||
       RegExp(r'\d{1,2}:\d{2}[.,]\d{1,3}\s*-->').hasMatch(text) ||
       RegExp(r'\[\d{1,2}:\d{2}[.:]\d{1,3}\]').hasMatch(text);
+}
+
+bool _isVideoExt(String path) {
+  final lower = path.toLowerCase();
+  return lower.endsWith('.mp4') ||
+      lower.endsWith('.m4v') ||
+      lower.endsWith('.mkv') ||
+      lower.endsWith('.webm') ||
+      lower.endsWith('.mov') ||
+      lower.endsWith('.avi') ||
+      lower.endsWith('.wmv') ||
+      lower.endsWith('.flv') ||
+      lower.endsWith('.ts') ||
+      lower.endsWith('.m2ts') ||
+      lower.endsWith('.3gp') ||
+      lower.endsWith('.mpg') ||
+      lower.endsWith('.mpeg') ||
+      lower.endsWith('.ogv');
 }
 
 bool _isLikelyText(List<int> head) {

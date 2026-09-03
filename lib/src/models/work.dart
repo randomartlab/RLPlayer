@@ -119,6 +119,7 @@ class FileNode {
     this.subtitlePath,
     this.isSubtitleFile = false,
     this.isImageFile = false,
+    this.isVideoFile = false,
   });
 
   final int id;
@@ -153,6 +154,9 @@ class FileNode {
 
   /// 图片文件节点（非封面内容图浏览，2026-09-02）。
   final bool isImageFile;
+
+  /// 视频文件节点（预览播放，2026-09-03）。
+  final bool isVideoFile;
 
   /// 播放器显示名（去扩展名）。
   String get displayName {

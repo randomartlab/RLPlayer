@@ -22,6 +22,7 @@ import '../widgets/comment_section.dart';
 import '../widgets/work_status_bar.dart';
 import '../widgets/translation_toggle_button.dart';
 import 'image_preview_screen.dart';
+import 'video_preview_screen.dart';
 import 'subtitle_preview_screen.dart';
 import '../widgets/enhanced_work_card.dart';
 import '../widgets/file_tree_view.dart';
@@ -167,7 +168,9 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
         final kind = classifyPreviewFile(entity);
         final isImage = kind.isImage;
         final isSubtitle = kind.isSubtitle;
-        if (!isImage && !isSubtitle) continue;
+        final isVideo = kind.isVideo;
+        if (isVideo && entity.lengthSync() < 1024) continue; // 空壳跳过
+        if (!isImage && !isSubtitle && !isVideo) continue;
         if (coverPath != null &&
             coverPath.isNotEmpty &&
             entity.path == coverPath) {
@@ -186,6 +189,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           filePath: entity.path,
           isSubtitleFile: isSubtitle,
           isImageFile: isImage,
+          isVideoFile: isVideo,
         ));
       }
     } catch (_) {
@@ -348,6 +352,14 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
   /// 按节点精确定位播放（实机 bug 修复：视觉序号 ≠ DB 序号导致点任何
   /// 音轨都播第一个；改为按 track.id 匹配，不依赖顺序）。
   Future<void> _playFromNode(FileNode node) async {
+    if (node.isVideoFile) {
+      // 视频 → 播放页（2026-09-03，类似图片/歌词预览）。
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => VideoPreviewScreen.local(path: node.filePath!,
+            title: node.name),
+      ));
+      return;
+    }
     if (node.isImageFile) {
       // 图片 → 全屏浏览（实机需求 2026-09-02）。
       await Navigator.of(context).push(MaterialPageRoute<void>(
@@ -764,8 +776,15 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           FileTreeView(
             nodes: _nodes,
             onTrackTap: (node) => unawaited(_playFromNode(node)),
-            onTrackLongPress: (node) =>
-                showAddToPlaylistDialog(context, work, node),
+            onTrackLongPress: (node) {
+              // 预览类文件（图/字幕/视频）不进播放列表。
+              if (node.isVideoFile ||
+                  node.isImageFile ||
+                  node.isSubtitleFile) {
+                return;
+              }
+              showAddToPlaylistDialog(context, work, node);
+            },
             displayName: _fileTreeDisplayName,
           ),
 

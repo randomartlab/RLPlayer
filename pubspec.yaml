@@ -2,7 +2,7 @@ name: kiko_local
 description: "KikoLocal - KikoFlu 像素级复刻的本地播放安卓音乐播放器"
 publish_to: 'none'
 
-version: 1.5.4+29
+version: 1.6.0+30
 
 environment:
   sdk: ^3.12.2
@@ -21,6 +21,7 @@ dependencies:
 
   # 播放内核（沿用 KikoFlu 组合：just_audio + audio_service + audio_session）
   just_audio: ^0.10.6
+  video_player: ^2.9.2
   audio_service: ^0.18.17
   audio_session: ^0.2.2
 

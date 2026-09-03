@@ -207,25 +207,31 @@ class _TrackRow extends StatelessWidget {
     final isCaption = node.isSubtitleFile;
     final isLrc = isCaption && node.name.toLowerCase().endsWith('.lrc');
     final isPic = node.isImageFile;
+    final isVideo = node.isVideoFile;
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(UiRadii.list),
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 2),
-        decoration: isCaption
+        decoration: isVideo
             ? BoxDecoration(
-                color: isLrc
-                    ? scheme.tertiaryContainer.withValues(alpha: 0.55)
-                    : scheme.secondaryContainer.withValues(alpha: 0.55),
+                color: scheme.errorContainer.withValues(alpha: 0.35),
                 borderRadius: BorderRadius.circular(UiRadii.list),
               )
-            : isPic
+            : isCaption
                 ? BoxDecoration(
-                    color: scheme.primaryContainer.withValues(alpha: 0.35),
+                    color: isLrc
+                        ? scheme.tertiaryContainer.withValues(alpha: 0.55)
+                        : scheme.secondaryContainer.withValues(alpha: 0.55),
                     borderRadius: BorderRadius.circular(UiRadii.list),
                   )
-                : null,
+                : isPic
+                    ? BoxDecoration(
+                        color: scheme.primaryContainer.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(UiRadii.list),
+                      )
+                    : null,
         child: Padding(
           padding: EdgeInsets.only(
             left: UiSpacing.large + depth * 20.0,

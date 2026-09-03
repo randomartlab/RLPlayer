@@ -227,53 +227,7 @@ class _SearchScreenState extends State<SearchScreen> {
               if (sheetContext.mounted) setSheet(() {});
             }
 
-            // 候选 = 本地字段（实时包含过滤）∪ 全站（按 count 前缀/包含）。
-            List<Map<String, dynamic>> candidates() {
-              final q = controller.text.trim().toLowerCase();
-              final local = <String>{};
-              for (final w in library.works) {
-                final meta = library.netMetaOf(w);
-                switch (type) {
-                  case SearchConditionType.tag:
-                    local.addAll(w.tags);
-                    local.addAll(meta?.netTags ?? const []);
-                  case SearchConditionType.circle:
-                    if (w.circleName != null) local.add(w.circleName!);
-                    if (meta?.netCircle != null) local.add(meta!.netCircle!);
-                  case SearchConditionType.va:
-                    local.addAll(w.vasNames);
-                    local.addAll(meta?.netVas ?? const []);
-                  default:
-                    if (w.rjCode != null) local.add(w.rjCode!);
-                    local.add(w.title);
-                }
-              }
-              final out = <Map<String, dynamic>>[];
-              final localList = local.where((e) => e.isNotEmpty).toList()
-                ..sort();
-              for (final e in localList) {
-                if (q.isEmpty || e.toLowerCase().contains(q)) {
-                  out.add({'name': e, 'count': null, 'local': true});
-                }
-              }
-              // 全站建议（若已加载），带 count；排除与本地重复。
-              final cloud = _cloudCache[type];
-              if (cloud != null) {
-                final seen = localList.toSet();
-                for (final item in cloud) {
-                  final name = (item['name'] as String?) ?? '';
-                  if (name.isEmpty || seen.contains(name)) continue;
-                  if (q.isEmpty || name.toLowerCase().contains(q)) {
-                    out.add({
-                      'name': name,
-                      'count': item['count'] ?? 0,
-                      'local': false,
-                    });
-                  }
-                }
-              }
-              return out.take(60).toList();
-            }
+
 
             return Padding(
               padding: EdgeInsets.only(
@@ -314,99 +268,114 @@ class _SearchScreenState extends State<SearchScreen> {
                         ],
                       ),
                       const SizedBox(height: UiSpacing.medium),
-                      // 值输入框。
-                      TextField(
-                        controller: controller,
-                        autofocus: true,
-                        decoration: InputDecoration(
-                          hintText: type == SearchConditionType.rj
-                              ? '输入数字自动补 RJ（如 416816）'
-                              : '输入${_typeLabels[type]}，实时弹推荐',
-                          isDense: true,
-                          border: const OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => setSheet(() {}),
-                        onSubmitted: (text) {
-                          if (text.trim().isEmpty) return;
-                          var raw = text.trim();
-                          if (type == SearchConditionType.rj &&
-                              RegExp(r'^\d{4,}$').hasMatch(raw)) {
-                            raw = 'RJ$raw';
+                      // 值输入框（kikoflu 式 RawAutocomplete：输入实时下拉补全）。
+                      RawAutocomplete<Map<String, dynamic>>(
+                        optionsBuilder: (val) {
+                          if (type == SearchConditionType.rj) {
+                            return const Iterable<Map<String, dynamic>>.empty();
                           }
-                          final cond = SearchCondition(
-                              type: type, value: raw, exclude: exclude);
-                          if (_editingIndex >= 0) {
-                            setState(() => _conditions[_editingIndex] = cond);
-                            _editingIndex = -1;
-                          } else {
-                            setState(() => _conditions.add(cond));
-                          }
-                          Navigator.of(sheetContext).pop();
-                          _run();
+                          final q = val.text.trim().toLowerCase();
+                          return _autocompleteOptions(type, q);
+                        },
+                        displayStringForOption: (o) => o['name'] as String,
+                        onSelected: (o) {
+                          // RawAutocomplete 已设置输入框文本，此处无需再设。
+                          setSheet(() {});
+                        },
+                        optionsViewBuilder: (context, onSelected, options) {
+                          return Align(
+                            alignment: Alignment.topLeft,
+                            child: Material(
+                              elevation: 4,
+                              borderRadius:
+                                  BorderRadius.circular(UiRadii.control),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                    maxHeight: 220, maxWidth: 320),
+                                child: ListView.builder(
+                                  padding: EdgeInsets.zero,
+                                  shrinkWrap: true,
+                                  itemCount: options.length,
+                                  itemBuilder: (context, index) {
+                                    final o = options.elementAt(index);
+                                    return ListTile(
+                                      dense: true,
+                                      visualDensity:
+                                          VisualDensity.compact,
+                                      leading: (o['local'] == true)
+                                          ? Icon(Icons.folder_outlined,
+                                              size: 16,
+                                              color: scheme.primary)
+                                          : Icon(Icons.cloud_outlined,
+                                              size: 16,
+                                              color: scheme
+                                                  .onSurfaceVariant),
+                                      title: Text(o['name'] as String,
+                                          maxLines: 1,
+                                          overflow:
+                                              TextOverflow.ellipsis),
+                                      trailing: o['count'] != null
+                                          ? Text('${o['count']}',
+                                              style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: scheme
+                                                      .onSurfaceVariant))
+                                          : null,
+                                      onTap: () => onSelected(o),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                        fieldViewBuilder: (context, textController,
+                            focusNode, onFieldSubmitted) {
+                          return TextField(
+                            controller: textController,
+                            focusNode: focusNode,
+                            autofocus: true,
+                            decoration: InputDecoration(
+                              hintText: type == SearchConditionType.rj
+                                  ? '输入数字自动补 RJ（如 416816）'
+                                  : '输入${_typeLabels[type]}，实时弹推荐',
+                              isDense: true,
+                              border: const OutlineInputBorder(),
+                              suffixIcon: type != SearchConditionType.rj
+                                  ? IconButton(
+                                      icon: const Icon(Icons.arrow_drop_down),
+                                      onPressed: () =>
+                                          textController.selection =
+                                              TextSelection.collapsed(
+                                                  offset: textController
+                                                      .text.length),
+                                    )
+                                  : null,
+                            ),
+                            onSubmitted: (text) {
+                              var raw = text.trim();
+                              if (raw.isEmpty) return;
+                              if (type == SearchConditionType.rj &&
+                                  RegExp(r'^\d{4,}$').hasMatch(raw)) {
+                                raw = 'RJ$raw';
+                              }
+                              final cond = SearchCondition(
+                                  type: type, value: raw, exclude: exclude);
+                              _commitCondition(sheetContext, cond);
+                            },
+                          );
                         },
                       ),
-                      const SizedBox(height: UiSpacing.small),
-                      // 实时推荐（本地 + 全站）。
                       if (cloudLoading)
                         const Padding(
-                          padding: EdgeInsets.all(UiSpacing.small),
+                          padding: EdgeInsets.all(4),
                           child: Center(
                               child: SizedBox(
-                                  width: 16,
-                                  height: 16,
+                                  width: 14,
+                                  height: 14,
                                   child: CircularProgressIndicator(
                                       strokeWidth: 2))),
-                        )
-                      else if (type != SearchConditionType.rj) ...[
-                        Text(
-                          controller.text.trim().isEmpty
-                              ? '推荐（可点选）'
-                              : '匹配推荐',
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: scheme.onSurfaceVariant),
                         ),
-                        SizedBox(
-                          height: 150,
-                          child: candidates().isEmpty
-                              ? Center(
-                                  child: Text('无匹配，回车直接添加',
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          color: scheme.onSurfaceVariant)))
-                              : ListView(
-                                  children: [
-                                    for (final c in candidates())
-                                      ListTile(
-                                        dense: true,
-                                        visualDensity:
-                                            VisualDensity.compact,
-                                        leading: (c['local'] == true)
-                                            ? Icon(Icons.folder_outlined,
-                                                size: 16,
-                                                color: scheme.primary)
-                                            : null,
-                                        title: Text(c['name'] as String,
-                                            maxLines: 1,
-                                            overflow:
-                                                TextOverflow.ellipsis),
-                                        trailing: c['count'] != null
-                                            ? Text('${c['count']}',
-                                                style: TextStyle(
-                                                    fontSize: 12,
-                                                    color: scheme
-                                                        .onSurfaceVariant))
-                                            : null,
-                                        onTap: () {
-                                          controller.text =
-                                              c['name'] as String;
-                                          setSheet(() {});
-                                        },
-                                      ),
-                                  ],
-                                ),
-                        ),
-                      ],
                       const SizedBox(height: UiSpacing.small),
                       // 排除 + 添加。
                       Row(
@@ -455,6 +424,62 @@ class _SearchScreenState extends State<SearchScreen> {
       },
     );
     _editingIndex = -1;
+  }
+
+
+  // ---- 条件添加辅助（RawAutocomplete options / commit）----
+
+  List<Map<String, dynamic>> _autocompleteOptions(
+      SearchConditionType type, String q) {
+    final library = context.read<LibraryProvider>();
+    final local = <String>{};
+    for (final w in library.works) {
+      final meta = library.netMetaOf(w);
+      switch (type) {
+        case SearchConditionType.tag:
+          local.addAll(w.tags);
+          local.addAll(meta?.netTags ?? const []);
+        case SearchConditionType.circle:
+          if (w.circleName != null) local.add(w.circleName!);
+          if (meta?.netCircle != null) local.add(meta!.netCircle!);
+        case SearchConditionType.va:
+          local.addAll(w.vasNames);
+          local.addAll(meta?.netVas ?? const []);
+        default:
+          if (w.rjCode != null) local.add(w.rjCode!);
+          local.add(w.title);
+      }
+    }
+    final out = <Map<String, dynamic>>[];
+    final localList = local.where((e) => e.isNotEmpty).toList()..sort();
+    for (final e in localList) {
+      if (q.isEmpty || e.toLowerCase().contains(q)) {
+        out.add({'name': e, 'count': null, 'local': true});
+      }
+    }
+    final cloud = _cloudCache[type];
+    if (cloud != null) {
+      final seen = localList.toSet();
+      for (final item in cloud) {
+        final name = (item['name'] as String?) ?? '';
+        if (name.isEmpty || seen.contains(name)) continue;
+        if (q.isEmpty || name.toLowerCase().contains(q)) {
+          out.add({'name': name, 'count': item['count'] ?? 0, 'local': false});
+        }
+      }
+    }
+    return out.take(50).toList();
+  }
+
+  void _commitCondition(BuildContext sheetContext, SearchCondition cond) {
+    if (_editingIndex >= 0) {
+      setState(() => _conditions[_editingIndex] = cond);
+      _editingIndex = -1;
+    } else {
+      setState(() => _conditions.add(cond));
+    }
+    Navigator.of(sheetContext).pop();
+    _run();
   }
 
   // ---- 历史还原 ----

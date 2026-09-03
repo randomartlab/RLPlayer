@@ -201,11 +201,11 @@ class KikoeruApiService {
 
   /// 关键词搜索（在线标签过滤：标签名作关键词）。
   Future<List<OnlineWork>> searchWorks(String keyword,
-      {int pageSize = 20}) async {
+      {int page = 1, int pageSize = 20}) async {
     final encoded = Uri.encodeComponent(keyword);
     final response = await _dio.get('/api/search/$encoded',
         queryParameters: {
-          'page': 1,
+          'page': page,
           'pageSize': pageSize,
           'order': 'release',
           'sort': 'desc',
@@ -326,9 +326,9 @@ class KikoeruApiService {
 
   /// 声优的全部作品（搜索按 CV 选取后检索）。
   Future<List<OnlineWork>> getVaWorks(String vaId,
-      {int pageSize = 20}) async {
+      {int page = 1, int pageSize = 20}) async {
     final response = await _dio.get('/api/vas/$vaId/works',
-        queryParameters: {'page': 1, 'pageSize': pageSize});
+        queryParameters: {'page': page, 'pageSize': pageSize});
     final data = response.data as Map<String, dynamic>;
     return (((data['works'] ?? const []) as List))
         .map((w) => OnlineWork.fromJson(w as Map<String, dynamic>))

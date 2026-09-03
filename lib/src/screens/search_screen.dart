@@ -17,6 +17,7 @@ import '../models/net_meta.dart';
 import '../models/search_query.dart';
 import '../models/work.dart';
 import '../providers/library_provider.dart';
+import '../providers/mirror_provider.dart';
 import '../utils/ui_tokens.dart';
 import '../widgets/enhanced_work_card.dart';
 import 'online_search_section.dart';
@@ -30,6 +31,10 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
+  /// 全站建议缓存（tag/circle/va 首次拉取后复用）。
+  static final Map<SearchConditionType, List<Map<String, dynamic>>> _cloudCache =
+      {};
+
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   Timer? _debounce;
@@ -177,11 +182,36 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _openAddSheet({SearchCondition? initial}) async {
     final library = context.read<LibraryProvider>();
     await library.warmNetMetas();
+    final mirror = context.read<MirrorProvider>();
     if (!mounted) return;
     var type = initial?.type ?? SearchConditionType.keyword;
     final controller =
         TextEditingController(text: initial != null ? initial.displayValue : '');
     var exclude = initial?.exclude ?? false;
+    var cloudLoading = false;
+
+    // 懒加载全站建议（tag/circle/va 首次拉取缓存）。
+    Future<void> ensureCloud() async {
+      if (type != SearchConditionType.tag &&
+          type != SearchConditionType.circle &&
+          type != SearchConditionType.va) {
+        return;
+      }
+      if (_cloudCache.containsKey(type)) return;
+      cloudLoading = true;
+      try {
+        final list = switch (type) {
+          SearchConditionType.tag => await mirror.api.getAllTags(),
+          SearchConditionType.circle => await mirror.api.getAllCircles(),
+          _ => await mirror.api.getAllVas(),
+        };
+        _cloudCache[type] = list;
+      } catch (_) {
+        // 全站不可用 → 仅本地候选。
+      } finally {
+        cloudLoading = false;
+      }
+    }
 
     await showModalBottomSheet<void>(
       context: context,
@@ -190,31 +220,59 @@ class _SearchScreenState extends State<SearchScreen> {
         final scheme = Theme.of(sheetContext).colorScheme;
         return StatefulBuilder(
           builder: (sheetContext, setSheet) {
-            // 候选（按类型聚合本地字段）。
-            List<String> candidatesFor() {
-              final s = <String>{};
+            // 类型切换时懒拉全站建议。
+            Future<void> onType(SearchConditionType t) async {
+              setSheet(() => type = t);
+              await ensureCloud();
+              if (sheetContext.mounted) setSheet(() {});
+            }
+
+            // 候选 = 本地字段（实时包含过滤）∪ 全站（按 count 前缀/包含）。
+            List<Map<String, dynamic>> candidates() {
+              final q = controller.text.trim().toLowerCase();
+              final local = <String>{};
               for (final w in library.works) {
                 final meta = library.netMetaOf(w);
                 switch (type) {
                   case SearchConditionType.tag:
-                    s.addAll(w.tags);
-                    s.addAll(meta?.netTags ?? const []);
+                    local.addAll(w.tags);
+                    local.addAll(meta?.netTags ?? const []);
                   case SearchConditionType.circle:
-                    if (w.circleName != null) s.add(w.circleName!);
-                    if (meta?.netCircle != null) s.add(meta!.netCircle!);
+                    if (w.circleName != null) local.add(w.circleName!);
+                    if (meta?.netCircle != null) local.add(meta!.netCircle!);
                   case SearchConditionType.va:
-                    s.addAll(w.vasNames);
-                    s.addAll(meta?.netVas ?? const []);
+                    local.addAll(w.vasNames);
+                    local.addAll(meta?.netVas ?? const []);
                   default:
-                    s.add(w.title);
-                    if (w.rjCode != null) s.add(w.rjCode!);
+                    if (w.rjCode != null) local.add(w.rjCode!);
+                    local.add(w.title);
                 }
               }
-              final list = s.where((e) => e.isNotEmpty).toList()..sort();
-              final q = controller.text.trim().toLowerCase();
-              return q.isEmpty
-                  ? list.take(200).toList()
-                  : list.where((e) => e.toLowerCase().contains(q)).take(50).toList();
+              final out = <Map<String, dynamic>>[];
+              final localList = local.where((e) => e.isNotEmpty).toList()
+                ..sort();
+              for (final e in localList) {
+                if (q.isEmpty || e.toLowerCase().contains(q)) {
+                  out.add({'name': e, 'count': null, 'local': true});
+                }
+              }
+              // 全站建议（若已加载），带 count；排除与本地重复。
+              final cloud = _cloudCache[type];
+              if (cloud != null) {
+                final seen = localList.toSet();
+                for (final item in cloud) {
+                  final name = (item['name'] as String?) ?? '';
+                  if (name.isEmpty || seen.contains(name)) continue;
+                  if (q.isEmpty || name.toLowerCase().contains(q)) {
+                    out.add({
+                      'name': name,
+                      'count': item['count'] ?? 0,
+                      'local': false,
+                    });
+                  }
+                }
+              }
+              return out.take(60).toList();
             }
 
             return Padding(
@@ -234,16 +292,16 @@ class _SearchScreenState extends State<SearchScreen> {
                                   .textTheme
                                   .titleMedium),
                           const Spacer(),
-                          if (initial != null)
-                            TextButton(
-                                onPressed: () =>
-                                    Navigator.of(sheetContext).pop(),
-                                child: const Text('取消')),
+                          IconButton(
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
                         ],
                       ),
-                      // 类型 chips
+                      // 类型 chips（Wrap 防大字体溢出）。
                       Wrap(
                         spacing: 6,
+                        runSpacing: 6,
                         children: [
                           for (final t in SearchConditionType.values)
                             ChoiceChip(
@@ -251,56 +309,109 @@ class _SearchScreenState extends State<SearchScreen> {
                                   style: const TextStyle(fontSize: 12)),
                               selected: type == t,
                               visualDensity: VisualDensity.compact,
-                              onSelected: (_) => setSheet(() => type = t),
+                              onSelected: (_) => onType(t),
                             ),
                         ],
                       ),
                       const SizedBox(height: UiSpacing.medium),
-                      // 值输入
+                      // 值输入框。
                       TextField(
                         controller: controller,
                         autofocus: true,
                         decoration: InputDecoration(
                           hintText: type == SearchConditionType.rj
                               ? '输入数字自动补 RJ（如 416816）'
-                              : _typeLabels[type],
+                              : '输入${_typeLabels[type]}，实时弹推荐',
                           isDense: true,
                           border: const OutlineInputBorder(),
                         ),
                         onChanged: (_) => setSheet(() {}),
+                        onSubmitted: (text) {
+                          if (text.trim().isEmpty) return;
+                          var raw = text.trim();
+                          if (type == SearchConditionType.rj &&
+                              RegExp(r'^\d{4,}$').hasMatch(raw)) {
+                            raw = 'RJ$raw';
+                          }
+                          final cond = SearchCondition(
+                              type: type, value: raw, exclude: exclude);
+                          if (_editingIndex >= 0) {
+                            setState(() => _conditions[_editingIndex] = cond);
+                            _editingIndex = -1;
+                          } else {
+                            setState(() => _conditions.add(cond));
+                          }
+                          Navigator.of(sheetContext).pop();
+                          _run();
+                        },
                       ),
-                      // 候选快捷点选
-                      if (type != SearchConditionType.keyword &&
-                          type != SearchConditionType.rj) ...[
-                        const SizedBox(height: 6),
-                        Text('候选（点选即填入）',
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: scheme.onSurfaceVariant)),
+                      const SizedBox(height: UiSpacing.small),
+                      // 实时推荐（本地 + 全站）。
+                      if (cloudLoading)
+                        const Padding(
+                          padding: EdgeInsets.all(UiSpacing.small),
+                          child: Center(
+                              child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2))),
+                        )
+                      else if (type != SearchConditionType.rj) ...[
+                        Text(
+                          controller.text.trim().isEmpty
+                              ? '推荐（可点选）'
+                              : '匹配推荐',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: scheme.onSurfaceVariant),
+                        ),
                         SizedBox(
-                          height: 130,
-                          child: ListView(
-                            children: [
-                              for (final cand in candidatesFor())
-                                ListTile(
-                                  dense: true,
-                                  title: Text(cand,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis),
-                                  onTap: () {
-                                    controller.text = cand;
-                                    setSheet(() {});
-                                  },
+                          height: 150,
+                          child: candidates().isEmpty
+                              ? Center(
+                                  child: Text('无匹配，回车直接添加',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: scheme.onSurfaceVariant)))
+                              : ListView(
+                                  children: [
+                                    for (final c in candidates())
+                                      ListTile(
+                                        dense: true,
+                                        visualDensity:
+                                            VisualDensity.compact,
+                                        leading: (c['local'] == true)
+                                            ? Icon(Icons.folder_outlined,
+                                                size: 16,
+                                                color: scheme.primary)
+                                            : null,
+                                        title: Text(c['name'] as String,
+                                            maxLines: 1,
+                                            overflow:
+                                                TextOverflow.ellipsis),
+                                        trailing: c['count'] != null
+                                            ? Text('${c['count']}',
+                                                style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: scheme
+                                                        .onSurfaceVariant))
+                                            : null,
+                                        onTap: () {
+                                          controller.text =
+                                              c['name'] as String;
+                                          setSheet(() {});
+                                        },
+                                      ),
+                                  ],
                                 ),
-                            ],
-                          ),
                         ),
                       ],
-                      // 排除开关 + 确定
+                      const SizedBox(height: UiSpacing.small),
+                      // 排除 + 添加。
                       Row(
                         children: [
-                          const Text('排除',
-                              style: TextStyle(fontSize: 14)),
+                          const Text('排除', style: TextStyle(fontSize: 14)),
                           Switch(
                             value: exclude,
                             onChanged: (v) => setSheet(() => exclude = v),
@@ -319,19 +430,16 @@ class _SearchScreenState extends State<SearchScreen> {
                               }
                               final cond = SearchCondition(
                                   type: type,
-                                  value: raw.toUpperCase().startsWith('RJ') &&
-                                          type == SearchConditionType.rj
-                                      ? raw
-                                      : raw,
+                                  value: raw,
                                   exclude: exclude);
                               if (_editingIndex >= 0) {
-                                setState(() =>
-                                    _conditions[_editingIndex] = cond);
+                                setState(() => _conditions[_editingIndex] = cond);
                                 _editingIndex = -1;
                               } else {
-                                _addCondition(cond);
+                                setState(() => _conditions.add(cond));
                               }
                               Navigator.of(sheetContext).pop();
+                              _run();
                             },
                             child: Text(initial == null ? '添加' : '保存'),
                           ),

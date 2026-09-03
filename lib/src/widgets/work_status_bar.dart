@@ -186,7 +186,9 @@ class _WorkStatusBarState extends State<WorkStatusBar> {
             children: [
               // asmr.one 收藏（服务端书签，需登录）。
               if (numeric != null)
-                ActionChip(
+                Tooltip(
+                  message: '收藏：同步到 asmr.one 账号（跨设备可见）',
+                  child: ActionChip(
                   avatar: Icon(
                     fav ? Icons.bookmark : Icons.bookmark_border,
                     size: 15,
@@ -210,9 +212,12 @@ class _WorkStatusBarState extends State<WorkStatusBar> {
                   },
                   visualDensity: VisualDensity.compact,
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                 ),
               // 本机喜欢（独立双轨）。
-              ActionChip(
+              Tooltip(
+                message: '喜欢：仅保存在本机，不依赖账号',
+                child: ActionChip(
                 avatar: Icon(
                   _liked ? Icons.favorite : Icons.favorite_border,
                   size: 15,
@@ -223,6 +228,7 @@ class _WorkStatusBarState extends State<WorkStatusBar> {
                 onPressed: _toggleLike,
                 visualDensity: VisualDensity.compact,
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
               statusChip(WorkStatus.marked),
               statusChip(WorkStatus.listening),

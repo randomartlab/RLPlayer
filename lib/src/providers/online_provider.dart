@@ -73,6 +73,11 @@ class OnlineProvider extends ChangeNotifier {
   List<OnlineWork> get favoriteWorks =>
       _works.where((w) => _favoriteIds.contains(w.id)).toList();
 
+  /// 本地确认已取消收藏后同步内存集合（不再次发网络，2026-09-03）。
+  void forgetFavorite(int workId) {
+    if (_favoriteIds.remove(workId)) notifyListeners();
+  }
+
   bool _showFavoritesOnly = false;
   bool get showFavoritesOnly => _showFavoritesOnly;
   void toggleFavoritesOnly() {

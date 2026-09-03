@@ -11,7 +11,6 @@ import 'downloads_screen.dart';
 import 'favorites_tab.dart';
 import 'liked_tab.dart';
 import 'history_tab.dart';
-import 'my_reviews_tab.dart';
 import 'playlists_screen.dart';
 import 'status_tab.dart';
 import 'subtitle_library_tab.dart';
@@ -22,9 +21,8 @@ enum _LocalViewMode { all, identified, unident }
 /// 「我的」全部可配置 Tab 定义（索引即隐藏键，2026-09-03）。
 const List<({String label, IconData icon})> _myTabDefs = [
   (label: '状态', icon: Icons.bookmark_outline),
-  (label: '标记', icon: Icons.sync_outlined),
-  (label: '喜欢', icon: Icons.favorite_outline),
   (label: '收藏', icon: Icons.cloud_outlined),
+  (label: '喜欢', icon: Icons.favorite_outline),
   (label: '本地库', icon: Icons.folder_outlined),
   (label: '历史', icon: Icons.history),
   (label: '播放列表', icon: Icons.queue_music),
@@ -153,21 +151,19 @@ class _MyScreenState extends State<MyScreen> {
       case 0:
         return const StatusTab();
       case 1:
-        return const MyReviewsTab();
+        return const FavoritesTab();
       case 2:
         return const LikedTab();
       case 3:
-        return const FavoritesTab();
-      case 4:
         return ListenableBuilder(
           listenable: context.watch<LibraryProvider>(),
           builder: (_, __) => _LocalLibraryView(viewMode: _viewMode),
         );
-      case 5:
+      case 4:
         return const HistoryTab();
-      case 6:
+      case 5:
         return const PlaylistsScreen();
-      case 7:
+      case 6:
         return const SubtitleLibraryTab();
       default:
         return const DownloadsScreen();

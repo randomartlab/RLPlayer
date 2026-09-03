@@ -3,6 +3,7 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/library_provider.dart';
+import '../providers/ui_settings_provider.dart';
 import '../utils/ui_tokens.dart';
 import '../widgets/enhanced_work_card.dart';
 import 'downloads_screen.dart';
@@ -15,11 +16,22 @@ import 'work_detail_screen.dart';
 
 enum _LocalViewMode { all, identified, unident }
 
-/// Tab3 我的页（2026-09-03 M1：状态清单 tab + 本地库视角切换）。
+/// 「我的」全部可配置 Tab 定义（索引即隐藏键，2026-09-03）。
+const List<({String label, IconData icon})> _myTabDefs = [
+  (label: '状态', icon: Icons.bookmark_outline),
+  (label: '收藏', icon: Icons.cloud_outlined),
+  (label: '本地库', icon: Icons.folder_outlined),
+  (label: '历史', icon: Icons.history),
+  (label: '播放列表', icon: Icons.queue_music),
+  (label: '字幕库', icon: Icons.subtitles_outlined),
+  (label: '下载', icon: Icons.download_outlined),
+];
+
+/// Tab3 我的页（2026-09-03：可配置 Tab 显示 + 状态/收藏/本地库视角）。
 class MyScreen extends StatefulWidget {
   const MyScreen({super.key, this.onOpenSettings});
 
-  /// 跳到主框架「设置」Tab（2026-09-03）。
+  /// 跳到主框架「设置」Tab。
   final VoidCallback? onOpenSettings;
 
   @override
@@ -29,12 +41,148 @@ class MyScreen extends StatefulWidget {
 class _MyScreenState extends State<MyScreen> {
   _LocalViewMode _viewMode = _LocalViewMode.all;
 
+  void _openTabSheet(BuildContext context) {
+    final ui = context.read<UiSettingsProvider>();
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        // 局部刷新：监听 provider 变化。
+        return ListenableBuilder(
+          listenable: ui,
+          builder: (_, __) {
+            final hidden = ui.myTabsHidden;
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(UiSpacing.small),
+                    child: Text('显示哪些 Tab',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 16)),
+                  ),
+                  for (var i = 0; i < _myTabDefs.length; i++)
+                    SwitchListTile(
+                      dense: true,
+                      secondary: Icon(_myTabDefs[i].icon, size: 20),
+                      title: Text(_myTabDefs[i].label),
+                      value: !hidden.contains(i),
+                      onChanged: (show) async {
+                        // 至少保留一个可见 Tab。
+                        if (!show && hidden.length >= _myTabDefs.length - 1) {
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              const SnackBar(
+                                  content: Text('至少保留一个 Tab'),
+                                  duration: Duration(seconds: 2)),
+                            );
+                          }
+                          return;
+                        }
+                        await ui.setMyTabHidden(i, !show);
+                      },
+                    ),
+                  const SizedBox(height: UiSpacing.medium),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _setViewMode(_LocalViewMode v) => setState(() => _viewMode = v);
+
+  @override
+  Widget build(BuildContext context) {
+    final uiSettings = context.watch<UiSettingsProvider>();
+    final hidden = uiSettings.myTabsHidden;
+    final visibleIndexes = [
+      for (var i = 0; i < _myTabDefs.length; i++)
+        if (!hidden.contains(i)) i,
+    ];
+    return DefaultTabController(
+      length: visibleIndexes.length,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('我的', style: UiTextStyles.pageTitle),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.tune),
+              tooltip: '显示 Tab',
+              onPressed: () => _openTabSheet(context),
+            ),
+            if (widget.onOpenSettings != null)
+              IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: '设置',
+                onPressed: widget.onOpenSettings,
+              ),
+          ],
+          bottom: TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            tabs: [
+              for (final i in visibleIndexes)
+                Tab(
+                  text: _myTabDefs[i].label,
+                  iconMargin: const EdgeInsets.all(0),
+                  height: 42,
+                ),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            for (final i in visibleIndexes) _pageByIndex(i, hidden),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pageByIndex(int i, Set<int> hidden) {
+    switch (i) {
+      case 0:
+        return const StatusTab();
+      case 1:
+        return const FavoritesTab();
+      case 2:
+        return ListenableBuilder(
+          listenable: context.watch<LibraryProvider>(),
+          builder: (_, __) => _LocalLibraryView(viewMode: _viewMode),
+        );
+      case 3:
+        return const HistoryTab();
+      case 4:
+        return const PlaylistsScreen();
+      case 5:
+        return const SubtitleLibraryTab();
+      default:
+        return const DownloadsScreen();
+    }
+  }
+}
+
+/// 本地库页：视角切换（全部/已识别/未识别）。
+class _LocalLibraryView extends StatefulWidget {
+  const _LocalLibraryView({required this.viewMode});
+
+  final _LocalViewMode viewMode;
+
+  @override
+  State<_LocalLibraryView> createState() => _LocalLibraryViewState();
+}
+
+class _LocalLibraryViewState extends State<_LocalLibraryView> {
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryProvider>();
     final allWorks = library.works;
     final works = allWorks.where((w) {
-      switch (_viewMode) {
+      switch (widget.viewMode) {
         case _LocalViewMode.all:
           return true;
         case _LocalViewMode.identified:
@@ -44,95 +192,56 @@ class _MyScreenState extends State<MyScreen> {
       }
     }).toList();
     final scheme = Theme.of(context).colorScheme;
-
-    return DefaultTabController(
-      length: 7,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text('我的', style: UiTextStyles.pageTitle),
-          actions: [
-            if (widget.onOpenSettings != null)
-              IconButton(
-                icon: const Icon(Icons.settings_outlined),
-                tooltip: '设置',
-                onPressed: widget.onOpenSettings,
-              ),
-          ],
-          bottom: const TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            tabs: [
-              Tab(text: '状态'),
-              Tab(text: '收藏'),
-              Tab(text: '本地库'),
-              Tab(text: '历史'),
-              Tab(text: '播放列表'),
-              Tab(text: '字幕库'),
-              Tab(text: '下载'),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+              UiSpacing.medium, UiSpacing.small, UiSpacing.medium, 0),
+          child: SegmentedButton<_LocalViewMode>(
+            segments: const [
+              ButtonSegment(value: _LocalViewMode.all, label: Text('全部')),
+              ButtonSegment(
+                  value: _LocalViewMode.identified, label: Text('已识别')),
+              ButtonSegment(
+                  value: _LocalViewMode.unident, label: Text('未识别')),
             ],
+            selected: {widget.viewMode},
+            style: const ButtonStyle(visualDensity: VisualDensity.compact),
+            onSelectionChanged: (v) {
+              final parent =
+                  context.findAncestorStateOfType<_MyScreenState>();
+              parent?._setViewMode(v.first);
+            },
           ),
         ),
-        body: TabBarView(
-          children: [
-            const StatusTab(),
-            const FavoritesTab(),
-            // 本地库：视角切换（全部/已识别/未识别）。
-            Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                      UiSpacing.medium, UiSpacing.small, UiSpacing.medium, 0),
-                  child: SegmentedButton<_LocalViewMode>(
-                    segments: const [
-                      ButtonSegment(value: _LocalViewMode.all, label: Text('全部')),
-                      ButtonSegment(
-                          value: _LocalViewMode.identified,
-                          label: Text('已识别')),
-                      ButtonSegment(
-                          value: _LocalViewMode.unident, label: Text('未识别')),
-                    ],
-                    selected: {_viewMode},
-                    style:
-                        const ButtonStyle(visualDensity: VisualDensity.compact),
-                    onSelectionChanged: (v) => setState(() => _viewMode = v.first),
+        Expanded(
+          child: works.isEmpty
+              ? Center(
+                  child: Text(
+                    allWorks.isEmpty
+                        ? (library.scanning ? '正在扫描…' : '本地库为空')
+                        : '该视角下暂无作品',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                )
+              : MasonryGridView.count(
+                  key: const PageStorageKey('my_library_grid'),
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  padding: const EdgeInsets.all(UiSpacing.medium),
+                  itemCount: works.length,
+                  itemBuilder: (context, index) => EnhancedWorkCard(
+                    work: works[index],
+                    size: WorkCardSize.compact,
+                    onTap: () => _openDetail(context, works[index]),
                   ),
                 ),
-                Expanded(
-                  child: works.isEmpty
-                      ? Center(
-                          child: Text(
-                            allWorks.isEmpty
-                                ? (library.scanning ? '正在扫描…' : '本地库为空')
-                                : '该视角下暂无作品',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(color: scheme.onSurfaceVariant),
-                          ),
-                        )
-                      : MasonryGridView.count(
-                          key: const PageStorageKey('my_library_grid'),
-                          crossAxisCount: 3,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          padding: const EdgeInsets.all(UiSpacing.medium),
-                          itemCount: works.length,
-                          itemBuilder: (context, index) => EnhancedWorkCard(
-                            work: works[index],
-                            size: WorkCardSize.compact,
-                            onTap: () => _openDetail(context, works[index]),
-                          ),
-                        ),
-                ),
-              ],
-            ),
-            const HistoryTab(),
-            const PlaylistsScreen(),
-            const SubtitleLibraryTab(),
-            const DownloadsScreen(),
-          ],
         ),
-      ),
+      ],
     );
   }
 
@@ -144,3 +253,4 @@ class _MyScreenState extends State<MyScreen> {
     );
   }
 }
+

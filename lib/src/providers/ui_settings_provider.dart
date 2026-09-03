@@ -17,8 +17,12 @@ class UiSettingsProvider extends ChangeNotifier {
   static const String _glassBlurModeKey = 'glass_blur_mode';
   static const String _uiFontScaleKey = 'ui_font_scale';
   static const String _lyricFontScaleKey = 'lyric_font_scale';
+  static const String _myTabsHiddenKey = 'my_tabs_hidden';
 
   NavStyle _navStyle = NavStyle.classic;
+
+  /// 「我的」Tab 隐藏集（索引，2026-09-03；空=全部显示）。
+  Set<int> _myTabsHidden = {};
   double _glassIntensity = 0.4; // 原版默认 intensity
   GlassBlurMode _glassBlurMode = GlassBlurMode.clear;
 
@@ -33,6 +37,7 @@ class UiSettingsProvider extends ChangeNotifier {
   double get lyricFontScale => _lyricFontScale;
   double get glassIntensity => _glassIntensity;
   GlassBlurMode get glassBlurMode => _glassBlurMode;
+  Set<int> get myTabsHidden => _myTabsHidden;
 
   bool get useLiquidGlass => _navStyle == NavStyle.liquidGlass;
 
@@ -49,7 +54,23 @@ class UiSettingsProvider extends ChangeNotifier {
         prefs.getInt(_glassBlurModeKey) ?? GlassBlurMode.clear.index];
     _uiFontScale = prefs.getDouble(_uiFontScaleKey) ?? 1.0;
     _lyricFontScale = prefs.getDouble(_lyricFontScaleKey) ?? 1.0;
+    _myTabsHidden = (prefs.getStringList(_myTabsHiddenKey) ?? const [])
+        .map(int.tryParse)
+        .whereType<int>()
+        .toSet();
     notifyListeners();
+  }
+
+  Future<void> setMyTabHidden(int index, bool hidden) async {
+    if (hidden) {
+      _myTabsHidden.add(index);
+    } else {
+      _myTabsHidden.remove(index);
+    }
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+        _myTabsHiddenKey, _myTabsHidden.map((e) => e.toString()).toList());
   }
 
   Future<void> setNavStyle(NavStyle style) async {

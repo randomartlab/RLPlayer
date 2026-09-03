@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -174,21 +175,40 @@ class MirrorProvider extends ChangeNotifier {
       try {
         final token = await storage.read(key: _tokenKey(mirror.host));
         if (token != null && token.isNotEmpty) {
+          // 写回内存（关键：_applyActiveMirror 依赖 _defaultToken/
+          // _customTokens，此前恢复只填 _users → 启动后/切镜像即掉登录）。
+          if (mirror.host == defaultHost) {
+            _defaultToken = token;
+          } else {
+            _customTokens[mirror.host] = token;
+          }
           // 验证 token 有效性（拉一次用户名）；失败则清除。
           api.switchHost(mirror.host, token);
-          final response = await api.getFavorites(page: 1);
+          await api.getFavorites(page: 1);
           // 无异常即 token 有效；用户名从收藏接口不可得，存本地。
           final prefs = await SharedPreferences.getInstance();
           final name = prefs.getString(_userKeyPrefix + mirror.host) ?? '';
           if (name.isNotEmpty) {
             _users[mirror.host] = OnlineUser(id: 0, name: name);
           }
-          // ignore: unused_local_variable
-          debugPrint('[Mirror] 恢复登录: ${mirror.host} (${response.length} 收藏)');
+          debugPrint('[Mirror] 恢复登录: ${mirror.host}');
         }
-      } catch (_) {
-        // token 失效，清除。
-        unawaited(storage.delete(key: _tokenKey(mirror.host)));
+      } catch (e) {
+        // 仅 401/403（凭证无效）清除；网络抖动等保留 token，
+        // 否则冷启动网络不佳会误删登录（实机反馈 2026-09-03 登录态掉）。
+        final status = e is DioException ? e.response?.statusCode : null;
+        final invalid = status == 401 || status == 403;
+        if (invalid) {
+          if (mirror.host == defaultHost) {
+            _defaultToken = null;
+          } else {
+            _customTokens.remove(mirror.host);
+          }
+          unawaited(storage.delete(key: _tokenKey(mirror.host)));
+          debugPrint('[Mirror] 登录失效清除: ${mirror.host}');
+        } else {
+          debugPrint('[Mirror] 恢复校验暂不可达（保留登录）: ${mirror.host}');
+        }
       }
     }
     _applyActiveMirror();

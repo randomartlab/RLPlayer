@@ -10,6 +10,7 @@ import '../providers/mirror_provider.dart';
 import '../providers/theme_mode.dart';
 import '../providers/theme_provider.dart';
 import '../providers/ui_settings_provider.dart';
+import '../utils/app_constants.dart';
 import '../utils/ui_tokens.dart';
 import 'folder_picker_screen.dart';
 import 'help_screen.dart';
@@ -302,7 +303,7 @@ class SettingsScreen extends StatelessWidget {
                 leading:
                     _LeadingIcon(icon: Icons.info_outline, context: context),
                 title: const Text('RLPlayer'),
-                subtitle: const Text('v1.3.7 · ASMR/同人音声本地播放器\n致敬 kikoeru / kikoflu 的开源设计'),
+                subtitle: const Text('v$kAppVersion · $kAppTagline\n$kAppCredits'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(

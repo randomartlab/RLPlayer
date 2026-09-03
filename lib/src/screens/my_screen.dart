@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:provider/provider.dart';
 
+import '../models/work.dart';
 import '../providers/library_provider.dart';
 import '../providers/ui_settings_provider.dart';
 import '../utils/ui_tokens.dart';
@@ -191,6 +192,7 @@ class _LocalLibraryViewState extends State<_LocalLibraryView> {
           return w.rjCode == null;
       }
     }).toList();
+    final unident = allWorks.where((w) => w.rjCode == null).toList();
     final scheme = Theme.of(context).colorScheme;
     return Column(
       children: [
@@ -214,6 +216,29 @@ class _LocalLibraryViewState extends State<_LocalLibraryView> {
             },
           ),
         ),
+        if (widget.viewMode == _LocalViewMode.unident && unident.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(UiSpacing.medium,
+                UiSpacing.xSmall, UiSpacing.medium, 0),
+            child: Row(
+              children: [
+                Icon(Icons.help_outline,
+                    size: 16, color: scheme.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text('${unident.length} 个作品未识别 RJ',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant)),
+                ),
+                TextButton.icon(
+                  onPressed: () => _openBulkRjSheet(context, unident),
+                  icon: const Icon(Icons.edit_note, size: 16),
+                  label: const Text('批量补录'),
+                ),
+              ],
+            ),
+          ),
         Expanded(
           child: works.isEmpty
               ? Center(
@@ -243,6 +268,153 @@ class _LocalLibraryViewState extends State<_LocalLibraryView> {
         ),
       ],
     );
+  }
+
+  /// 批量补录 RJ（未识别视角，2026-09-03）。
+  void _openBulkRjSheet(BuildContext context, List<Work> unident) {
+    final library = context.read<LibraryProvider>();
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final remaining = [...unident];
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            if (remaining.isEmpty) {
+              return SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(UiSpacing.large),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.check_circle_outline,
+                          size: 40),
+                      const SizedBox(height: UiSpacing.medium),
+                      const Text('全部补录完成 🎉',
+                          style: TextStyle(fontSize: 16)),
+                      const SizedBox(height: UiSpacing.small),
+                      Text('未识别作品已全部标注 RJ',
+                          style: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant)),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(UiSpacing.small),
+                    child: Text('补录 RJ 号（${remaining.length} 个未识别）',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 16)),
+                  ),
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: remaining.length,
+                      itemBuilder: (context, i) => ListTile(
+                        dense: true,
+                        title: Text(remaining[i].title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                        subtitle: const Text('填写后点 ➜'),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.edit),
+                          tooltip: '补 RJ',
+                          onPressed: () async {
+                            final norm = await _askRj(context, remaining[i].title);
+                            if (norm == null) return;
+                            final ok = await library
+                                .setWorkRjCode(remaining[i].id, norm);
+                            if (!ctx.mounted) return;
+                            if (ok) {
+                              setSheetState(
+                                  () => remaining.removeAt(i));
+                            } else {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                  const SnackBar(content: Text('保存失败')));
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(UiSpacing.small),
+                    child: Text('提示：可直接输数字，如 416816 → RJ416816',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant)),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// 询问单个 RJ 号，返回规范化值或 null（取消）。
+  Future<String?> _askRj(BuildContext context, String title) async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('补录 RJ 号'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13)),
+            const SizedBox(height: UiSpacing.small),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'RJ416816 或 416816',
+                helperText: 'RJ / BJ / VJ 前缀均可',
+                border: OutlineInputBorder(),
+              ),
+              textCapitalization: TextCapitalization.characters,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () =>
+                  Navigator.of(ctx).pop(controller.text.trim()),
+              child: const Text('保存')),
+        ],
+      ),
+    );
+    if (result == null || result.isEmpty) return null;
+    var norm = result.toUpperCase().replaceAll(RegExp(r'[\s\-—]'), '');
+    // 纯数字自动补 RJ 前缀。
+    if (RegExp(r'^\d+$').hasMatch(norm)) norm = 'RJ\$norm';
+    if (!RegExp(r'^(RJ|BJ|VJ)\d+$').hasMatch(norm)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('格式不对：应为 RJ/BJ/VJ + 数字'),
+            duration: Duration(seconds: 3)));
+      }
+      return null;
+    }
+    return norm;
   }
 
   void _openDetail(BuildContext context, dynamic work) {

@@ -430,6 +430,11 @@ class MirrorProvider extends ChangeNotifier {
     return ok ?? false;
   }
 
+  Future<List<Map<String, dynamic>>> fetchPlaylistWorks(String id) async {
+    return await withLoginHost((api) => api.getPlaylistWorks(id)) ??
+        const [];
+  }
+
   /// 作品评论拉取：优先走「当前镜像已登录」的会话；若当前镜像未登录
   /// 但其他镜像登录过（自动测速切换场景），临时用登录过的镜像请求并
   /// 恢复（实机反馈 2026-09-02：one 登录后激活镜像切走 → 评论 404）。

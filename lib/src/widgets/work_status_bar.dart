@@ -11,7 +11,6 @@ import 'package:provider/provider.dart';
 
 import '../providers/library_provider.dart';
 import '../providers/mirror_provider.dart';
-import '../providers/online_provider.dart';
 import '../utils/ui_tokens.dart';
 import 'account_playlist_sheet.dart';
 
@@ -156,10 +155,8 @@ class _WorkStatusBarState extends State<WorkStatusBar> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final mirror = context.watch<MirrorProvider>();
-    final online = context.watch<OnlineProvider>();
     final library = context.watch<LibraryProvider>();
     final numeric = _numeric;
-    final fav = numeric != null && online.favoriteIds.contains(numeric);
     _liked = library.isLiked(widget.rjCode); // 全局保持同步
 
     Widget statusChip(WorkStatus status) {
@@ -186,35 +183,6 @@ class _WorkStatusBarState extends State<WorkStatusBar> {
             runSpacing: UiSpacing.xSmall,
             children: [
               // asmr.one 收藏（服务端书签，需登录）。
-              if (numeric != null)
-                Tooltip(
-                  message: '收藏：同步到 asmr.one 账号（跨设备可见）',
-                  child: ActionChip(
-                  avatar: Icon(
-                    fav ? Icons.bookmark : Icons.bookmark_border,
-                    size: 15,
-                    color: fav ? scheme.primary : scheme.onSurfaceVariant,
-                  ),
-                  label: Text(fav ? '已收藏' : '收藏',
-                      style: const TextStyle(fontSize: 12)),
-                  onPressed: () async {
-                    if (!mirror.hasAnyLogin) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                          content: Text('收藏需先登录 asmr.one（设置 → 服务器与账号）'),
-                          duration: Duration(seconds: 3)));
-                      return;
-                    }
-                    online.toggleFavorite(numeric);
-                    final now = online.favoriteIds.contains(numeric);
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(now ? '已加入收藏' : '已取消收藏'),
-                        duration: const Duration(seconds: 2)));
-                  },
-                  visualDensity: VisualDensity.compact,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
               // 本机喜欢（独立双轨）。
               Tooltip(
                 message: '喜欢：仅保存在本机，不依赖账号',
@@ -295,8 +263,8 @@ class _WorkStatusBarState extends State<WorkStatusBar> {
                             horizontal: 10, vertical: 4)),
                   ),
                   Text(mirror.hasAnyLogin
-                      ? '状态/评分同步账号'
-                      : '登录后状态/评分/播放列表将同步账号',
+                      ? '想听=账号书签·状态/评分/歌单同步账号'
+                      : '登录后想听/状态/评分/歌单将同步账号',
                       style: TextStyle(
                           fontSize: 10, color: scheme.onSurfaceVariant)),
                 ],

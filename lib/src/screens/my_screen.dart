@@ -11,7 +11,7 @@ import 'downloads_screen.dart';
 import 'favorites_tab.dart';
 import 'liked_tab.dart';
 import 'history_tab.dart';
-import 'playlists_screen.dart';
+import 'server_playlists_tab.dart';
 import 'status_tab.dart';
 import 'subtitle_library_tab.dart';
 import 'work_detail_screen.dart';
@@ -162,7 +162,7 @@ class _MyScreenState extends State<MyScreen> {
       case 4:
         return const HistoryTab();
       case 5:
-        return const PlaylistsScreen();
+        return const ServerPlaylistsTab();
       case 6:
         return const SubtitleLibraryTab();
       default:

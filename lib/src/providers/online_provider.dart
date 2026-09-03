@@ -50,7 +50,9 @@ class OnlineProvider extends ChangeNotifier {
       debugPrint('[Online] 书签加载: ${_favoriteIds.length} 个');
       notifyListeners();
     } catch (_) {
-      // 游客/未登录：书签功能降级为本地内存态。
+      // 游客/未登录或服务器无 /api/favourites（404）：
+      // 置 loaded 避免每次进页重复请求；书签由 review marked 承担。
+      favoritesLoaded = true;
     }
   }
 

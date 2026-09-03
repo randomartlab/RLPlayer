@@ -485,6 +485,21 @@ class KikoeruApiService {
         data: {'id': playlistId, 'works': works});
   }
 
+  /// 歌单内作品（/api/playlist/get-playlist-works）。
+  Future<List<Map<String, dynamic>>> getPlaylistWorks(
+      String playlistId) async {
+    final resp = await _dio.get('/api/playlist/get-playlist-works',
+        queryParameters: {'id': playlistId});
+    final data = resp.data;
+    if (data is Map<String, dynamic>) {
+      for (final key in const ['works', 'list', 'items', 'data']) {
+        final l = data[key];
+        if (l is List) return l.cast<Map<String, dynamic>>();
+      }
+    }
+    return const [];
+  }
+
   // ---- 媒体 URL（token 走查询参数，播放器无需 Authorization header） ----
 
   /// 下载封面字节（网络封面兜底落盘用）。

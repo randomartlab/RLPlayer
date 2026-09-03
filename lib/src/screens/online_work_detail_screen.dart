@@ -399,14 +399,8 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
       appBar: AppBar(
         title: Text(work.rjCode),
         actions: [
-          // 书签（服务端收藏，M12 用户清单 #1）。
-          IconButton(
-            icon: Icon(online.favoriteIds.contains(work.id)
-                ? Icons.bookmark
-                : Icons.bookmark_border_outlined),
-            tooltip: online.favoriteIds.contains(work.id) ? '移除书签' : '加入书签',
-            onPressed: () => online.toggleFavorite(work.id),
-          ),
+          // 账号收藏已在下方操作条（想听=账号书签，2026-09-03 服务器无
+          // /api/favourites，收藏统一为 review marked）。
           // 外部链接（DLsite 作品页，#7）。
           IconButton(
             icon: const Icon(Icons.open_in_new),

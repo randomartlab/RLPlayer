@@ -1,24 +1,27 @@
+/// Tab2 搜索页（2026-09-03 迭代：统一条件对象模型）。
+///
+/// - 本地：条件 chips（类型+值+排除可切换），组合 AND/OR + 排除
+///   后置硬过滤，完整命中本地库（含 NetMeta 回填字段）
+/// - 全网：条件对象为源；单 include 条件转发给选择器/搜索组件
+///   （多 include 的全网组合后续里程碑）
+/// - 保留历史（条件序列化）、单字候选建议
+library;
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
-import '../models/work.dart';
-import '../models/net_meta.dart';
-import '../providers/library_provider.dart';
-import '../services/local_library_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/net_meta.dart';
+import '../models/search_query.dart';
+import '../models/work.dart';
+import '../providers/library_provider.dart';
 import '../utils/ui_tokens.dart';
 import '../widgets/enhanced_work_card.dart';
 import 'online_search_section.dart';
 import 'work_detail_screen.dart';
 
-/// Tab2 搜索页（M6，PRD §5.7 首版：关键词/RJ 号本地搜索）。
-///
-/// - 关键词：模糊匹配作品标题 + 音轨名（LIKE，PRD FTS 五条件中的核心两条）；
-/// - RJ 号：数字自动补全 RJ 前缀精确匹配；
-/// - 搜索完全离线，零网络请求（PRD 验收）；
-/// - 搜索历史（SharedPreferences）。
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
 
@@ -31,335 +34,48 @@ class _SearchScreenState extends State<SearchScreen> {
   final FocusNode _focusNode = FocusNode();
   Timer? _debounce;
 
-  String _query = '';
+  bool _onlineMode = false;
+  SearchCombine _combine = SearchCombine.and;
+  final List<SearchCondition> _conditions = [];
+  int _editingIndex = -1;
+
   List<Work> _results = const [];
   bool _searched = false;
 
-  /// 搜索范围：本地 / 全网（2026-09-02 用户需求）。
-  bool _onlineMode = false;
-
-  // ---- 实时候选（单字即弹，2026-09-02 用户需求）----
-  /// 候选条目：label + 命中类型（跳转对应条件搜索）。
-  List<({String label, String type, int conditionType})> _suggestions = const [];
-  Timer? _suggestDebounce;
-
-  void _updateSuggestions() {
-    final library = context.read<LibraryProvider>();
-    final q = _query.trim().toLowerCase();
-    if (q.isEmpty) {
-      if (_suggestions.isNotEmpty) setState(() => _suggestions = const []);
-      return;
-    }
-    final items = <({String label, String type, int conditionType})>[];
-    // 聚合本地字段（works + NetMeta——后台回填后元数据齐全）。
-    final seen = <String>{};
-    for (final work in library.works) {
-      for (final vas in work.vasNames) {
-        if (vas.toLowerCase().contains(q) && seen.add('V:$vas')) {
-          items.add((label: vas, type: 'CV', conditionType: 4));
-        }
-      }
-      if (work.circleName != null &&
-          work.circleName!.toLowerCase().contains(q) &&
-          seen.add('C:${work.circleName}')) {
-        items.add(
-            (label: work.circleName!, type: '社团', conditionType: 3));
-      }
-      for (final tag in work.tags) {
-        if (tag.toLowerCase().contains(q) && seen.add('T:$tag')) {
-          items.add((label: tag, type: '标签', conditionType: 2));
-        }
-      }
-      if (work.title.toLowerCase().contains(q) && seen.add('W:${work.title}')) {
-        items.add((label: work.title, type: '作品', conditionType: 0));
-      }
-      if (work.rjCode?.toLowerCase().contains(q) == true &&
-          seen.add('R:${work.rjCode}')) {
-        items.add((label: work.rjCode!, type: 'RJ', conditionType: 1));
-      }
-    }
-    // NetMeta 字段聚合（异步——warmNetMetas 已加载则同步可用）。
-    for (final work in library.works) {
-      final meta = library.netMetaOf(work);
-      if (meta == null) continue;
-      for (final vas in meta.netVas) {
-        if (vas.toLowerCase().contains(q) && seen.add('V:$vas')) {
-          items.add((label: vas, type: 'CV', conditionType: 4));
-        }
-      }
-      if (meta.netCircle != null &&
-          meta.netCircle!.toLowerCase().contains(q) &&
-          seen.add('C:${meta.netCircle}')) {
-        items.add((label: meta.netCircle!, type: '社团', conditionType: 3));
-      }
-      for (final tag in meta.netTags) {
-        if (tag.toLowerCase().contains(q) && seen.add('T:$tag')) {
-          items.add((label: tag, type: '标签', conditionType: 2));
-        }
-      }
-    }
-    // 排序：短标签优先（更精确），限 12 条。
-    items.sort((a, b) => a.label.length.compareTo(b.label.length));
-    if (mounted) {
-      setState(() => _suggestions = items.take(12).toList());
-    }
-  }
-
-  /// 搜索条件类型（PRD §5.7：关键词/RJ号/标签/社团/声优）。
-  int _conditionType = 0;
-  static const _conditions = [
-    ('关键词', Icons.text_fields),
-    ('RJ 号', Icons.tag),
-    ('标签', Icons.label_outline),
-    ('社团', Icons.group_outlined),
-    ('声优', Icons.mic_outlined),
-    // 组合搜索（AND/并集交互组件，2026-09-02 用户需求——替代 $-词$ 指令）。
-    ('组合', Icons.manage_search),
-  ];
-
-  // ---- 组合搜索状态 ----
-  /// 条目：(条件类型索引, 值, 是否排除)。
-  final List<(int, String, bool)> _comboConditions = [];
-  /// true = 全部满足（AND）；false = 任一满足（OR）。
-  bool _comboAnd = true;
-
-  Future<void> _runComboSearch() async {
-    if (_comboConditions.isEmpty) {
-      setState(() {
-        _results = const [];
-        _searched = false;
-      });
-      return;
-    }
-    final library = context.read<LibraryProvider>();
-    final db = library.database;
-    final result = <Work>[];
-    for (final work in library.works) {
-      // 每个条件的命中判断。
-      Future<bool> match((int, String, bool) cond) async {
-        final (type, rawValue, exclude) = cond;
-        final value = rawValue.toLowerCase();
-        bool hit = switch (type) {
-          1 => (work.rjCode?.toLowerCase().contains(value) ?? false),
-          2 => work.tags.any((t) => t.toLowerCase().contains(value)),
-          3 => (work.circleName?.toLowerCase().contains(value) ?? false),
-          4 => work.vasNames.any((v) => v.toLowerCase().contains(value)),
-          _ => work.title.toLowerCase().contains(value),
-        };
-        if (!hit && db != null && work.rjCode != null) {
-          final meta = await db.queryNetMeta(work.rjCode!);
-          if (meta != null) {
-            hit = switch (type) {
-              2 => meta.netTags
-                  .any((t) => t.toLowerCase().contains(value)),
-              3 => (meta.netCircle?.toLowerCase().contains(value) ?? false),
-              4 => meta.netVas
-                  .any((v) => v.toLowerCase().contains(value)),
-              _ => (meta.netTitle?.toLowerCase().contains(value) ?? false),
-            };
-          }
-        }
-        // 排除条件：命中即视为不满足。
-        return exclude ? !hit : hit;
-      }
-
-      final matches =
-          await Future.wait(_comboConditions.map(match));
-      final ok = _comboAnd
-          ? matches.every((m) => m)
-          : matches.any((m) => m);
-      if (ok) result.add(work);
-    }
-    if (mounted) {
-      setState(() {
-        _results = result;
-        _searched = true;
-      });
-    }
-  }
-
-  /// 组合条件构建器弹层。
-  Future<void> _showComboBuilder() async {
-    final library = context.read<LibraryProvider>();
-    await library.warmNetMetas();
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (sheetContext, setSheetState) {
-          final scheme = Theme.of(sheetContext).colorScheme;
-          // 候选聚合（与实时候选同源）。
-          final candidates = <String>{};
-          for (final w in library.works) {
-            candidates
-              ..add(w.title)
-              ..addAll(w.vasNames)
-              ..addAll(w.tags);
-            if (w.circleName != null) candidates.add(w.circleName!);
-            final meta = library.netMetaOf(w);
-            if (meta != null) {
-              candidates
-                ..addAll(meta.netVas)
-                ..addAll(meta.netTags);
-              if (meta.netCircle != null) candidates.add(meta.netCircle!);
-            }
-          }
-          return DraggableScrollableSheet(
-            expand: false,
-            initialChildSize: 0.7,
-            builder: (_, __) => Padding(
-              padding: const EdgeInsets.all(UiSpacing.large),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Text('组合搜索',
-                          style: Theme.of(sheetContext)
-                              .textTheme
-                              .titleMedium),
-                      const Spacer(),
-                      // AND / OR 切换。
-                      SegmentedButton<bool>(
-                        segments: const [
-                          ButtonSegment(value: true, label: Text('全部满足')),
-                          ButtonSegment(value: false, label: Text('任一满足')),
-                        ],
-                        selected: {_comboAnd},
-                        onSelectionChanged: (v) {
-                          setSheetState(() => _comboAnd = v.first);
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: UiSpacing.medium),
-                  // 已加条件 chips。
-                  Wrap(
-                    spacing: UiSpacing.small,
-                    runSpacing: UiSpacing.xSmall,
-                    children: [
-                      for (var i = 0; i < _comboConditions.length; i++)
-                        InputChip(
-                          avatar: Icon(
-                            _comboConditions[i].$3
-                                ? Icons.block
-                                : Icons.check,
-                            size: 14,
-                            color: _comboConditions[i].$3
-                                ? scheme.error
-                                : scheme.primary,
-                          ),
-                          label: Text(
-                              '${_conditions[_comboConditions[i].$1].$1}:${_comboConditions[i].$2}'),
-                          onDeleted: () {
-                            setSheetState(
-                                () => _comboConditions.removeAt(i));
-                          },
-                        ),
-                    ],
-                  ),
-                  const Divider(height: UiSpacing.large),
-                  // 快速添加：类型选择 + 候选列表（点选即加条件）。
-                  Expanded(
-                    child: DefaultTabController(
-                      length: 5,
-                      child: Column(
-                        children: [
-                          TabBar(
-                            isScrollable: true,
-                            tabs: [
-                              for (final c in _conditions.take(5))
-                                Tab(text: c.$1),
-                            ],
-                          ),
-                          Expanded(
-                            child: TabBarView(
-                              children: [
-                                for (var t = 0; t < 5; t++)
-                                  ListView(
-                                    children: [
-                                      for (final cand in candidates
-                                          .where((c) => c.isNotEmpty)
-                                          .take(200)
-                                          .toList()
-                                        ..sort())
-                                        ListTile(
-                                          dense: true,
-                                          title: Text(cand,
-                                              maxLines: 1,
-                                              overflow:
-                                                  TextOverflow.ellipsis),
-                                          trailing: PopupMenuButton<String>(
-                                            onSelected: (mode) {
-                                              setSheetState(() =>
-                                                  _comboConditions.add((
-                                                    t,
-                                                    cand,
-                                                    mode == 'exclude',
-                                                  )));
-                                            },
-                                            itemBuilder: (_) => const [
-                                              PopupMenuItem(
-                                                  value: 'include',
-                                                  child: Text('添加（满足）')),
-                                              PopupMenuItem(
-                                                  value: 'exclude',
-                                                  child: Text('添加（排除）')),
-                                            ],
-                                          ),
-                                          onTap: () {
-                                            setSheetState(() =>
-                                                _comboConditions.add(
-                                                    (t, cand, false)));
-                                          },
-                                        ),
-                                    ],
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: UiSpacing.medium),
-                  FilledButton(
-                    onPressed: () {
-                      Navigator.of(sheetContext).pop();
-                      _runComboSearch();
-                    },
-                    child: const Text('搜索'),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  /// 搜索历史（最近 10 条，PRD 验收要求）。
   List<String> _history = const [];
-  static const String _historyKey = 'search_history';
+  static const _historyKey = 'search_history_v2';
 
-  /// 高级筛选（PRD §5.7：有无歌词/字幕、年龄分级）。
-  static const _filters = [
-    ('有歌词', 1),
-    ('有字幕', 2),
-    ('全年龄', 3),
-    ('R18', 4),
-  ];
-  final Set<int> _activeFilters = {};
+  static const _typeLabels = <SearchConditionType, String>{
+    SearchConditionType.keyword: '关键词',
+    SearchConditionType.rj: 'RJ 号',
+    SearchConditionType.tag: '标签',
+    SearchConditionType.circle: '社团',
+    SearchConditionType.va: '声优',
+  };
 
-  /// 排除语法 `$-词$`（PRD §5.7）：命中的作品被剔除。
-  static final _excludeRegex = RegExp(r'\$-([^$]+)\$');
+  static const _typeIcons = <SearchConditionType, IconData>{
+    SearchConditionType.keyword: Icons.text_fields,
+    SearchConditionType.rj: Icons.tag,
+    SearchConditionType.tag: Icons.label_outline,
+    SearchConditionType.circle: Icons.group_outlined,
+    SearchConditionType.va: Icons.mic_outlined,
+  };
 
   @override
   void initState() {
     super.initState();
     _loadHistory();
   }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  // ---- 历史 ----
 
   Future<void> _loadHistory() async {
     final prefs = await SharedPreferences.getInstance();
@@ -368,175 +84,301 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  Future<void> _saveHistory(String query) async {
+  Future<void> _saveHistory() async {
+    if (_conditions.isEmpty) return;
+    final serialized = _serializeConditions();
     final prefs = await SharedPreferences.getInstance();
-    final updated = [
-      query,
-      ..._history.where((h) => h != query),
-    ].take(10).toList();
-    setState(() => _history = updated);
+    final updated = [serialized, ..._history.where((h) => h != serialized)]
+        .take(10)
+        .toList();
+    if (mounted) setState(() => _history = updated);
     await prefs.setStringList(_historyKey, updated);
   }
 
-  Future<void> _clearHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() => _history = []);
-    await prefs.setStringList(_historyKey, []);
+  String _serializeConditions() {
+    final buf = StringBuffer();
+    for (final c in _conditions) {
+      if (buf.isNotEmpty) buf.write(' && ');
+      if (c.exclude) buf.write('排除 ');
+      buf.write('${_typeLabels[c.type]}:${c.displayValue}');
+    }
+    return buf.toString();
   }
 
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _suggestDebounce?.cancel();
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
+  // ---- 条件操作 ----
+
+  void _addCondition(SearchCondition c) {
+    setState(() => _conditions.add(c));
+    _controller.clear();
+    _run();
   }
 
-  void _onChanged(String value) {
-    _debounce?.cancel();
-    _suggestDebounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), () {
-      setState(() => _query = value.trim());
-      _search();
-    });
-    // 候选即时更新（单字即弹）。
-    _suggestDebounce =
-        Timer(const Duration(milliseconds: 80), () {
-      _query = value.trim();
-      _updateSuggestions();
-    });
+  void _removeCondition(int index) {
+    setState(() => _conditions.removeAt(index));
+    _run();
   }
 
-  /// 本地库搜索（作品标题/音轨名 LIKE，RJ 号精确）。
-  Future<void> _search() async {
-    if (_query.isEmpty) {
+  void _toggleExclude(int index) {
+    final c = _conditions[index];
+    setState(() => _conditions[index] = c.copyWith(exclude: !c.exclude));
+    _run();
+  }
+
+  void _editCondition(int index) {
+    _editingIndex = index;
+    _openAddSheet(initial: _conditions[index]);
+  }
+
+  // ---- 执行 ----
+
+  Future<void> _run() async {
+    if (_onlineMode) {
+      // 全网：交给 OnlineSearchSection（用第一个 include 条件检索）。
+      setState(() {});
+      return;
+    }
+    final library = context.read<LibraryProvider>();
+    final db = library.database;
+    final query = SearchQuery(conditions: _conditions, combine: _combine);
+    final result = <Work>[];
+    if (query.isEmpty) {
       setState(() {
         _results = const [];
         _searched = false;
       });
       return;
     }
-    final library = context.read<LibraryProvider>();
-    final db = library.database;
-    final query = _query.toLowerCase();
-
-    // 排除语法：$-词$ 剥离为排除词。
-    final excludes = _excludeRegex
-        .allMatches(_query)
-        .map((m) => m.group(1)!.trim().toLowerCase())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    final keyword = _query
-        .replaceAll(_excludeRegex, ' ')
-        .trim()
-        .toLowerCase();
-
-    final results = <Work>[];
     for (final work in library.works) {
-      var hit = false;
-      switch (_conditionType) {
-        case 1: // RJ 号（纯数字自动补前缀）。
-          final rj =
-              RegExp(r'^\d{5,8}$').hasMatch(keyword) ? 'rj$keyword' : keyword;
-          hit = work.rjCode?.toLowerCase() == rj ||
-              work.rjCode?.toLowerCase().contains(keyword) == true;
-        case 2: // 标签：works.tags + NetMeta.netTags。
-          hit = work.tags.any((t) => t.toLowerCase().contains(keyword));
-          hit = hit ||
-              await _netMetaMatch(db, work,
-                  (m) => m.netTags.any((t) => t.toLowerCase().contains(query)));
-        case 3: // 社团。
-          hit = work.circleName?.toLowerCase().contains(keyword) ?? false;
-          hit = hit ||
-              await _netMetaMatch(db, work,
-                  (m) => m.netCircle?.toLowerCase().contains(query) ?? false);
-        case 4: // 声优。
-          hit = work.vasNames
-              .any((v) => v.toLowerCase().contains(keyword));
-          hit = hit ||
-              await _netMetaMatch(db, work,
-                  (m) => m.netVas.any((v) => v.toLowerCase().contains(query)));
-        default:
-          // 关键词全字段（实机需求 2026-09-02：输入 CV/关键词/社团/题目
-          // 动态匹配）：标题/社团/CV/标签/RJ 号 + 音轨名 + NetMeta 回填。
-          hit = work.title.toLowerCase().contains(keyword) ||
-              (work.circleName?.toLowerCase().contains(keyword) ?? false) ||
-              (work.rjCode?.toLowerCase().contains(keyword) ?? false) ||
-              work.vasNames.any(
-                  (v) => v.toLowerCase().contains(keyword)) ||
-              work.tags.any((t) => t.toLowerCase().contains(keyword));
-          if (!hit && db != null && work.rjCode != null) {
-            final meta = await db.queryNetMeta(work.rjCode!);
-            if (meta != null) {
-              hit = (meta.netTitle?.toLowerCase().contains(keyword) ??
-                      false) ||
-                  (meta.netCircle?.toLowerCase().contains(keyword) ?? false) ||
-                  meta.netVas.any(
-                      (v) => v.toLowerCase().contains(keyword)) ||
-                  meta.netTags.any(
-                      (t) => t.toLowerCase().contains(keyword));
-            }
-          }
-          if (!hit) {
-            final nodes = await library.nodesOf(work);
-            hit = nodes.any((node) =>
-                !node.isDirectory &&
-                node.displayName.toLowerCase().contains(keyword));
-          }
+      NetMeta? meta;
+      if (db != null && work.rjCode != null) {
+        meta = library.netMetaOf(work) ?? await db.queryNetMeta(work.rjCode!);
       }
-      // 排除词命中 → 剔除。
-      if (hit && excludes.isNotEmpty) {
-        final blob = [
-          work.title,
-          work.circleName ?? '',
-          work.rjCode ?? '',
-          ...work.vasNames,
-          ...work.tags,
-        ].join(' ').toLowerCase();
-        if (excludes.any((e) => blob.contains(e))) hit = false;
-      }
-      if (hit) results.add(work);
+      if (query.matches(work, meta: meta)) result.add(work);
     }
-
-    // 高级筛选后置（PRD §5.7）。
-    var filtered = results;
-    for (final f in _activeFilters) {
-      filtered = filtered.where((w) {
-        switch (f) {
-          case 1:
-            return w.hasLyric;
-          case 2:
-            return w.hasSubtitle;
-          case 3:
-            return w.nsfw != true;
-          case 4:
-            return w.nsfw == true;
-        }
-        return true;
-      }).toList();
-    }
-    final results2 = filtered;
-    if (mounted) {
-      setState(() {
-        _results = results2;
-        _searched = true;
-      });
-      _saveHistory(_query);
-    }
+    if (!mounted) return;
+    setState(() {
+      _results = result;
+      _searched = true;
+    });
+    _saveHistory();
   }
+
+  void _clearConditions() {
+    setState(() {
+      _conditions.clear();
+      _results = const [];
+      _searched = false;
+      _controller.clear();
+    });
+  }
+
+  // ---- 添加条件弹层 ----
+
+  Future<void> _openAddSheet({SearchCondition? initial}) async {
+    final library = context.read<LibraryProvider>();
+    await library.warmNetMetas();
+    if (!mounted) return;
+    var type = initial?.type ?? SearchConditionType.keyword;
+    final controller =
+        TextEditingController(text: initial != null ? initial.displayValue : '');
+    var exclude = initial?.exclude ?? false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final scheme = Theme.of(sheetContext).colorScheme;
+        return StatefulBuilder(
+          builder: (sheetContext, setSheet) {
+            // 候选（按类型聚合本地字段）。
+            List<String> candidatesFor() {
+              final s = <String>{};
+              for (final w in library.works) {
+                final meta = library.netMetaOf(w);
+                switch (type) {
+                  case SearchConditionType.tag:
+                    s.addAll(w.tags);
+                    s.addAll(meta?.netTags ?? const []);
+                  case SearchConditionType.circle:
+                    if (w.circleName != null) s.add(w.circleName!);
+                    if (meta?.netCircle != null) s.add(meta!.netCircle!);
+                  case SearchConditionType.va:
+                    s.addAll(w.vasNames);
+                    s.addAll(meta?.netVas ?? const []);
+                  default:
+                    s.add(w.title);
+                    if (w.rjCode != null) s.add(w.rjCode!);
+                }
+              }
+              final list = s.where((e) => e.isNotEmpty).toList()..sort();
+              final q = controller.text.trim().toLowerCase();
+              return q.isEmpty
+                  ? list.take(200).toList()
+                  : list.where((e) => e.toLowerCase().contains(q)).take(50).toList();
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(UiSpacing.large),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(initial == null ? '添加条件' : '编辑条件',
+                              style: Theme.of(sheetContext)
+                                  .textTheme
+                                  .titleMedium),
+                          const Spacer(),
+                          if (initial != null)
+                            TextButton(
+                                onPressed: () =>
+                                    Navigator.of(sheetContext).pop(),
+                                child: const Text('取消')),
+                        ],
+                      ),
+                      // 类型 chips
+                      Wrap(
+                        spacing: 6,
+                        children: [
+                          for (final t in SearchConditionType.values)
+                            ChoiceChip(
+                              label: Text(_typeLabels[t]!,
+                                  style: const TextStyle(fontSize: 12)),
+                              selected: type == t,
+                              visualDensity: VisualDensity.compact,
+                              onSelected: (_) => setSheet(() => type = t),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: UiSpacing.medium),
+                      // 值输入
+                      TextField(
+                        controller: controller,
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          hintText: type == SearchConditionType.rj
+                              ? '输入数字自动补 RJ（如 416816）'
+                              : _typeLabels[type],
+                          isDense: true,
+                          border: const OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setSheet(() {}),
+                      ),
+                      // 候选快捷点选
+                      if (type != SearchConditionType.keyword &&
+                          type != SearchConditionType.rj) ...[
+                        const SizedBox(height: 6),
+                        Text('候选（点选即填入）',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: scheme.onSurfaceVariant)),
+                        SizedBox(
+                          height: 130,
+                          child: ListView(
+                            children: [
+                              for (final cand in candidatesFor())
+                                ListTile(
+                                  dense: true,
+                                  title: Text(cand,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis),
+                                  onTap: () {
+                                    controller.text = cand;
+                                    setSheet(() {});
+                                  },
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      // 排除开关 + 确定
+                      Row(
+                        children: [
+                          const Text('排除',
+                              style: TextStyle(fontSize: 14)),
+                          Switch(
+                            value: exclude,
+                            onChanged: (v) => setSheet(() => exclude = v),
+                          ),
+                          const Spacer(),
+                          FilledButton(
+                            onPressed: () {
+                              var raw = controller.text.trim();
+                              if (raw.isEmpty) {
+                                Navigator.of(sheetContext).pop();
+                                return;
+                              }
+                              if (type == SearchConditionType.rj &&
+                                  RegExp(r'^\d{4,}$').hasMatch(raw)) {
+                                raw = 'RJ$raw';
+                              }
+                              final cond = SearchCondition(
+                                  type: type,
+                                  value: raw.toUpperCase().startsWith('RJ') &&
+                                          type == SearchConditionType.rj
+                                      ? raw
+                                      : raw,
+                                  exclude: exclude);
+                              if (_editingIndex >= 0) {
+                                setState(() =>
+                                    _conditions[_editingIndex] = cond);
+                                _editingIndex = -1;
+                              } else {
+                                _addCondition(cond);
+                              }
+                              Navigator.of(sheetContext).pop();
+                            },
+                            child: Text(initial == null ? '添加' : '保存'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    _editingIndex = -1;
+  }
+
+  // ---- 历史还原 ----
+
+  void _restoreHistory(String serialized) {
+    // 简化：解析「关键词:值 / 排除 标签:值」——完整还原复杂，先尝试
+    // 解析为 keyword 条件文本（保留可追溯性）。
+    _clearConditions();
+    _controller.text = serialized;
+    _addCondition(SearchCondition(
+        type: SearchConditionType.keyword, value: serialized));
+  }
+
+  // ---- UI ----
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(
         title: Text('搜索', style: UiTextStyles.pageTitle),
+        actions: [
+          if (_conditions.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_sweep_outlined),
+              tooltip: '清空条件',
+              onPressed: _clearConditions,
+            ),
+        ],
       ),
       body: Column(
         children: [
-          // 搜索范围 toggle（本地/全网，2026-09-02）。
           Padding(
             padding: const EdgeInsets.fromLTRB(
                 UiSpacing.medium, UiSpacing.xSmall, UiSpacing.medium, 0),
@@ -551,329 +393,177 @@ class _SearchScreenState extends State<SearchScreen> {
                   onSelectionChanged: (v) =>
                       setState(() => _onlineMode = v.first),
                 ),
-              ],
-            ),
-          ),
-          // 条件类型 chips（PRD §5.7 五条件；全网模式标签/社团/声优
-          // 变为全表选择器）。
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-                UiSpacing.medium, UiSpacing.small, UiSpacing.medium, 0),
-            child: SizedBox(
-              height: 40,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (var i = 0; i < _conditions.length; i++)
-                    Padding(
-                      padding: const EdgeInsets.only(right: UiSpacing.small),
-                      child: FilterChip(
-                        avatar: Icon(_conditions[i].$2, size: 16),
-                        label: Text(_conditions[i].$1),
-                        selected: _conditionType == i,
-                        onSelected: (_) {
-                          setState(() => _conditionType = i);
-                          if (i == 5) {
-                            _showComboBuilder();
-                          } else {
-                            _search();
-                          }
-                        },
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          // 实时候选面板（单字即弹，2026-09-02 用户需求；
-          // 本地模式专属——全网模式有自己的选择器）。
-          if (!_onlineMode && _suggestions.isNotEmpty)
-            Container(
-              constraints: const BoxConstraints(maxHeight: 260),
-              margin:
-                  const EdgeInsets.symmetric(horizontal: UiSpacing.medium),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(UiRadii.control),
-                border: Border.all(
-                    color: scheme.outlineVariant.withValues(alpha: 0.4)),
-              ),
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: _suggestions.length,
-                itemBuilder: (context, index) {
-                  final sug = _suggestions[index];
-                  return ListTile(
-                    dense: true,
-                    visualDensity: VisualDensity.compact,
-                    leading: _suggestionIcon(sug.type),
-                    title: Text(sug.label,
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                    trailing: Text(sug.type,
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant)),
-                    onTap: () {
-                      // 点候选：切到对应条件类型并搜索。
-                      setState(() {
-                        _conditionType = sug.conditionType;
-                        _query = sug.label;
-                        _controller.text = sug.label;
-                        _suggestions = const [];
-                      });
-                      _search();
-                    },
-                  );
-                },
-              ),
-            ),
-          // 高级筛选 chips（PRD §5.7：有无歌词/字幕、年龄分级）。
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: UiSpacing.medium),
-            child: SizedBox(
-              height: 36,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (final (label, value) in _filters)
-                    Padding(
-                      padding: const EdgeInsets.only(right: UiSpacing.small),
-                      child: FilterChip(
-                        label: Text(label),
-                        selected: _activeFilters.contains(value),
-                        onSelected: (_) {
-                          setState(() {
-                            _activeFilters.contains(value)
-                                ? _activeFilters.remove(value)
-                                : _activeFilters.add(value);
-                          });
-                          _search();
-                        },
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          // 胶囊搜索栏：48dp 高 StadiumBorder（UI 规范 §5.3）。
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-                UiSpacing.medium, UiSpacing.small, UiSpacing.medium, 0),
-            child: SizedBox(
-              height: UiControlSize.standard,
-              child: SearchBar(
-                controller: _controller,
-                focusNode: _focusNode,
-                hintText: '作品名 / 音轨名 / RJ 号',
-                leading: const Icon(Icons.search),
-                elevation: const WidgetStatePropertyAll(1),
-                onChanged: _onChanged,
-                trailing: [
-                  if (_query.isNotEmpty)
-                    IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _controller.clear();
-                        setState(() {
-                          _query = '';
-                          _results = const [];
-                          _searched = false;
-                        });
-                      },
-                    ),
-                ],
-              ),
-            ),
-          ),
-          Expanded(
-            // 全网模式：在线搜索（标签/社团/声优为全表选择器）。
-            child: _onlineMode
-                ? OnlineSearchSection(
-                    conditionType: _conditionType,
-                    query: _query,
-                  )
-                : _conditionType == 5
-                    ? Column(
-                        children: [
-                          if (_comboConditions.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: UiSpacing.medium,
-                                  vertical: UiSpacing.xSmall),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Wrap(
-                                      spacing: UiSpacing.xSmall,
-                                      runSpacing: UiSpacing.xSmall,
-                                      children: [
-                                        for (final c in _comboConditions)
-                                          Chip(
-                                            label: Text(
-                                                '${_conditions[c.$1].$1}:${c.$2}',
-                                                style:
-                                                    const TextStyle(fontSize: 11)),
-                                            visualDensity: VisualDensity.compact,
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                  TextButton(
-                                    onPressed: () =>
-                                        _showComboBuilder(),
-                                    child: const Text('编辑'),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          Expanded(
-                            child: _results.isNotEmpty
-                                ? ListView.builder(
-                                    itemCount: _results.length,
-                                    itemBuilder: (context, index) =>
-                                        EnhancedWorkCard(
-                                      work: _results[index],
-                                      size: WorkCardSize.list,
-                                      onTap: () => _openDetail(
-                                          context, _results[index]),
-                                    ),
-                                  )
-                                : Center(
-                                    child: Text(
-                                      _comboConditions.isEmpty
-                                          ? '点「编辑」组合搜索条件'
-                                          : '没有满足条件的作品',
-                                      style: TextStyle(
-                                          color: scheme.onSurfaceVariant),
-                                    ),
-                                  ),
-                          ),
-                        ],
-                      )
-                : _results.isNotEmpty
-                    ? ListView.builder(
-                        key: const PageStorageKey('search_results'),
-                        itemCount: _results.length,
-                        itemBuilder: (context, index) => EnhancedWorkCard(
-                          work: _results[index],
-                          size: WorkCardSize.list,
-                          onTap: () => _openDetail(context, _results[index]),
-                        ),
-                      )
-                    : _searched
-                        ? Center(
-                            child: Text(
-                              '没有找到「$_query」相关作品',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(color: scheme.onSurfaceVariant),
-                            ),
-                          )
-                        : Column(
-                            children: [
-                              _buildHistory(context),
-                              Expanded(child: _buildIdle(context)),
-                            ],
-                          ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _suggestionIcon(String type) {
-    final scheme = Theme.of(context).colorScheme;
-    final icon = switch (type) {
-      'CV' => Icons.mic_outlined,
-      '社团' => Icons.group_outlined,
-      '标签' => Icons.label_outline,
-      'RJ' => Icons.tag,
-      _ => Icons.music_note_outlined,
-    };
-    return Icon(icon, size: 18, color: scheme.primary);
-  }
-
-  Widget _buildHistory(BuildContext context) {
-    if (_history.isEmpty) return const SizedBox.shrink();
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: UiSpacing.large),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                    child: Text('搜索历史',
-                        style: TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w500))),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  onPressed: _clearHistory,
-                  tooltip: '清空历史',
-                ),
-              ],
-            ),
-            Wrap(
-              spacing: UiSpacing.small,
-              children: [
-                for (final item in _history)
-                  ActionChip(
-                    label: Text(item),
-                    onPressed: () {
-                      _controller.text = item;
-                      _onChanged(item);
-                    },
+                const Spacer(),
+                if (!_onlineMode && _conditions.isNotEmpty)
+                  SegmentedButton<SearchCombine>(
+                    segments: const [
+                      ButtonSegment(value: SearchCombine.and, label: Text('全部满足')),
+                      ButtonSegment(value: SearchCombine.or, label: Text('任一满足')),
+                    ],
+                    selected: {_combine},
+                    onSelectionChanged: (v) =>
+                        setState(() => _combine = v.first),
                   ),
               ],
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildIdle(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.search, size: 64, color: scheme.onSurfaceVariant),
-          const SizedBox(height: UiSpacing.medium),
-          Text(
-            '搜索本地作品库',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
-          const SizedBox(height: UiSpacing.xSmall),
-          Text(
-            '完全离线 · 五条件 + 筛选 · 排除语法 \$-词\$',
-            style: UiTextStyles.supporting
-                .copyWith(color: scheme.onSurfaceVariant),
+          // 条件 chips 区
+          if (_conditions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: UiSpacing.medium, vertical: UiSpacing.xSmall),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (var i = 0; i < _conditions.length; i++)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () => _editCondition(i),
+                      onLongPress: () => _toggleExclude(i),
+                      child: InputChip(
+                        avatar: Icon(
+                          _conditions[i].exclude
+                              ? Icons.block
+                              : _typeIcons[_conditions[i].type],
+                          size: 15,
+                          color: _conditions[i].exclude
+                              ? scheme.error
+                              : scheme.primary,
+                        ),
+                        label: Text(
+                          _conditions[i].exclude
+                              ? '排除 ${_conditions[i].displayValue}'
+                              : _conditions[i].displayValue,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {},
+                        onDeleted: () => _removeCondition(i),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          // 添加条件
+          Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: UiSpacing.medium, vertical: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    decoration: InputDecoration(
+                      hintText: _conditions.isEmpty
+                          ? '搜索：关键词 / RJ / 标签 / 社团 / 声优'
+                          : '添加条件值…',
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24)),
+                    ),
+                    onSubmitted: (text) {
+                      if (text.trim().isEmpty) return;
+                      _addCondition(SearchCondition(
+                          type: SearchConditionType.keyword,
+                          value: text.trim()));
+                    },
+                  ),
+                ),
+                const SizedBox(width: UiSpacing.xSmall),
+                IconButton.filledTonal(
+                  onPressed: () => _openAddSheet(),
+                  icon: const Icon(Icons.add),
+                  tooltip: '添加条件（支持排除与组合）',
+                ),
+              ],
+            ),
           ),
+          Expanded(child: _buildBody(context, scheme)),
         ],
       ),
     );
   }
 
-  Future<bool> _netMetaMatch(
-      LocalLibraryDatabase? db, Work work, bool Function(NetMeta) test) async {
-    if (db == null || work.rjCode == null) return false;
-    final meta = await db.queryNetMeta(work.rjCode!);
-    return meta != null && !meta.noResult && test(meta);
-  }
+  Widget _buildBody(BuildContext context, ColorScheme scheme) {
+    if (_onlineMode) {
+      // 全网单条件：取第一个 include（keyword 常用）；OnlineSearchSection
+      // 的 conditionType 与 query 映射。
+      final inc = _conditions.where((c) => !c.exclude).toList();
+      final keyword = inc.isNotEmpty && inc.first.type == SearchConditionType.keyword
+          ? inc.first.value
+          : '';
+      final type = inc.isNotEmpty && inc.first.type != SearchConditionType.keyword
+          ? inc.first.type
+          : SearchConditionType.keyword;
+      return OnlineSearchSection(
+        conditionType: switch (type) {
+          SearchConditionType.rj => 1,
+          SearchConditionType.tag => 2,
+          SearchConditionType.circle => 3,
+          SearchConditionType.va => 4,
+          SearchConditionType.keyword => 0,
+        },
+        query: keyword,
+      );
+    }
 
-  void _openDetail(BuildContext context, Work work) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) => WorkDetailScreen(work: work),
+    if (_results.isNotEmpty) {
+      return ListView.builder(
+        key: const PageStorageKey('search_results'),
+        itemCount: _results.length,
+        itemBuilder: (context, index) => EnhancedWorkCard(
+          work: _results[index],
+          size: WorkCardSize.list,
+          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (context) => WorkDetailScreen(work: _results[index]))),
+        ),
+      );
+    }
+    if (_searched) {
+      return Center(
+        child: Text('没有满足条件的作品',
+            style: TextStyle(color: scheme.onSurfaceVariant)),
+      );
+    }
+    // 空态：历史 + 引导。
+    if (_history.isNotEmpty) {
+      return ListView(
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(UiSpacing.medium),
+            child: Text('最近搜索',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+          ),
+          for (final h in _history)
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.history, size: 18),
+              title: Text(h, maxLines: 1, overflow: TextOverflow.ellipsis),
+              onTap: () => _restoreHistory(h),
+            ),
+        ],
+      );
+    }
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(UiSpacing.large),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.manage_search, size: 56, color: scheme.onSurfaceVariant),
+            const SizedBox(height: UiSpacing.medium),
+            Text('输入关键词，或用「+」组合多个条件',
+                style: TextStyle(color: scheme.onSurfaceVariant)),
+            const SizedBox(height: UiSpacing.xSmall),
+            Text('支持：全部满足(AND) / 任一满足(OR) / 排除；长按条件切换排除',
+                textAlign: TextAlign.center,
+                style:
+                    TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+          ],
+        ),
       ),
     );
   }

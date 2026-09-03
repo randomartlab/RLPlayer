@@ -14,6 +14,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/net_meta.dart';
+import '../models/search_advanced.dart';
 import '../models/search_query.dart';
 import '../models/work.dart';
 import '../providers/library_provider.dart';
@@ -42,6 +43,8 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _onlineMode = false;
   SearchCombine _combine = SearchCombine.and;
   final List<SearchCondition> _conditions = [];
+  SearchAdvanced _advanced = const SearchAdvanced();
+  bool _showAdvanced = false;
   int _editingIndex = -1;
 
   List<Work> _results = const [];
@@ -101,13 +104,10 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   String _serializeConditions() {
-    final buf = StringBuffer();
-    for (final c in _conditions) {
-      if (buf.isNotEmpty) buf.write(' && ');
-      if (c.exclude) buf.write('排除 ');
-      buf.write('${_typeLabels[c.type]}:${c.displayValue}');
-    }
-    return buf.toString();
+    return _conditions
+        .map((c) =>
+            '${c.type.name}:${c.exclude ? '!' : '+'}:${Uri.encodeComponent(c.value)}')
+        .join('|');
   }
 
   // ---- 条件操作 ----
@@ -158,7 +158,10 @@ class _SearchScreenState extends State<SearchScreen> {
       if (db != null && work.rjCode != null) {
         meta = library.netMetaOf(work) ?? await db.queryNetMeta(work.rjCode!);
       }
-      if (query.matches(work, meta: meta)) result.add(work);
+      if (query.matches(work, meta: meta) &&
+          applyLocalAdvanced(work, meta, _advanced)) {
+        result.add(work);
+      }
     }
     if (!mounted) return;
     setState(() {
@@ -485,12 +488,23 @@ class _SearchScreenState extends State<SearchScreen> {
   // ---- 历史还原 ----
 
   void _restoreHistory(String serialized) {
-    // 简化：解析「关键词:值 / 排除 标签:值」——完整还原复杂，先尝试
-    // 解析为 keyword 条件文本（保留可追溯性）。
     _clearConditions();
-    _controller.text = serialized;
-    _addCondition(SearchCondition(
-        type: SearchConditionType.keyword, value: serialized));
+    final parts = serialized.split('|');
+    for (final p in parts) {
+      final seg = p.split(':');
+      if (seg.length != 3) continue;
+      final type = SearchConditionType.values
+          .where((t) => t.name == seg[0])
+          .firstOrNull;
+      if (type == null) continue;
+      _conditions.add(SearchCondition(
+        type: type,
+        exclude: seg[1] == '!',
+        value: Uri.decodeComponent(seg[2]),
+      ));
+    }
+    setState(() {});
+    _run();
   }
 
   // ---- UI ----
@@ -586,6 +600,83 @@ class _SearchScreenState extends State<SearchScreen> {
                 ],
               ),
             ),
+          // 高级筛选（搜索 M3：评分/年龄/销量）。
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: UiSpacing.medium),
+            child: Row(
+              children: [
+                TextButton.icon(
+                  onPressed: () =>
+                      setState(() => _showAdvanced = !_showAdvanced),
+                  icon: Icon(Icons.tune,
+                      size: 16,
+                      color: _advanced.isActive
+                          ? scheme.primary
+                          : scheme.onSurfaceVariant),
+                  label: Text(_advanced.isActive ? '筛选已启用' : '筛选',
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: _advanced.isActive
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant)),
+                ),
+              ],
+            ),
+          ),
+          if (_showAdvanced)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(UiSpacing.medium, 0,
+                  UiSpacing.medium, UiSpacing.xSmall),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text('评分≥',
+                      style: TextStyle(fontSize: 12)),
+                  for (final r in const <double>[0, 1, 2, 3, 4, 4.5])
+                    ChoiceChip(
+                      label: Text(r == 0 ? '不限' : '$r',
+                          style: const TextStyle(fontSize: 11)),
+                      selected:
+                          (_advanced.minRating == r && r != 0) ||
+                              (r == 0 && _advanced.minRating == 0),
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (_) {
+                        setState(() {
+                          _advanced = SearchAdvanced(
+                            minRating: r,
+                            age: _advanced.age,
+                            minSales: _advanced.minSales,
+                          );
+                        });
+                        _run();
+                      },
+                    ),
+                  const SizedBox(width: 4),
+                  SegmentedButton<AgeFilter>(
+                    segments: const [
+                      ButtonSegment(value: AgeFilter.all, label: Text('全年龄')),
+                      ButtonSegment(value: AgeFilter.sfw, label: Text('仅全年龄')),
+                      ButtonSegment(value: AgeFilter.r18, label: Text('仅R18')),
+                    ],
+                    selected: {_advanced.age},
+                    style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact),
+                    onSelectionChanged: (v) {
+                      setState(() {
+                        _advanced = SearchAdvanced(
+                          minRating: _advanced.minRating,
+                          age: v.first,
+                          minSales: _advanced.minSales,
+                        );
+                      });
+                      _run();
+                    },
+                  ),
+                ],
+              ),
+            ),
           // 添加条件
           Padding(
             padding: const EdgeInsets.symmetric(
@@ -632,36 +723,19 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_onlineMode) {
       final inc = _conditions.where((c) => !c.exclude).toList();
       final exc = _conditions.where((c) => c.exclude).toList();
-      // 多 include → 组合检索（内存合并 AND/OR）。
-      if (inc.length > 1) {
+      // 统一走组合检索：>=1 include 均可用（单条件也可收窄 + 高级筛选）。
+      if (inc.isNotEmpty) {
         return OnlineCombineSearch(
           includes: inc,
           excludes: exc,
           combine: _combine,
+          advanced: _advanced,
         );
       }
-      // 全网单条件：取第一个 include（keyword 常用）；OnlineSearchSection
-      // 的 conditionType 与 query 映射。
-      final keyword = inc.isNotEmpty && inc.first.type == SearchConditionType.keyword
-          ? inc.first.value
-          : '';
-      final type = inc.isNotEmpty && inc.first.type != SearchConditionType.keyword
-          ? inc.first.type
-          : SearchConditionType.keyword;
-      if (exc.isNotEmpty && inc.isNotEmpty) {
-        // 单条件 + 排除：仍用组合组件（exclude 过滤）。
-        return OnlineCombineSearch(
-            includes: inc, excludes: exc, combine: _combine);
-      }
-      return OnlineSearchSection(
-        conditionType: switch (type) {
-          SearchConditionType.rj => 1,
-          SearchConditionType.tag => 2,
-          SearchConditionType.circle => 3,
-          SearchConditionType.va => 4,
-          SearchConditionType.keyword => 0,
-        },
-        query: keyword,
+      // 全网无 include 条件：提示先添加条件。
+      return Center(
+        child: Text('全网搜索请先添加条件（「+」或输入框回车）',
+            style: TextStyle(color: scheme.onSurfaceVariant)),
       );
     }
 

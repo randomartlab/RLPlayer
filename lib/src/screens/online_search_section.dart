@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/online_models.dart';
+import '../models/search_advanced.dart';
 import '../models/search_query.dart';
 import '../providers/library_provider.dart';
 import '../providers/mirror_provider.dart';
@@ -323,11 +324,13 @@ class OnlineCombineSearch extends StatefulWidget {
     required this.includes,
     required this.excludes,
     required this.combine,
+    this.advanced = const SearchAdvanced(),
   });
 
   final List<SearchCondition> includes;
   final List<SearchCondition> excludes;
   final SearchCombine combine;
+  final SearchAdvanced advanced;
 
   @override
   State<OnlineCombineSearch> createState() => _OnlineCombineSearchState();
@@ -338,6 +341,17 @@ class _OnlineCombineSearchState extends State<OnlineCombineSearch> {
   bool _loading = false;
   String? _error;
   String _info = '';
+
+  static bool _applyOnlineAdvanced(OnlineWork w, SearchAdvanced adv) {
+    if (!adv.isActive) return true;
+    if (adv.age == AgeFilter.sfw && w.nsfw == true) return false;
+    if (adv.age == AgeFilter.r18 && w.nsfw != true) return false;
+    if (adv.minRating > 0 && (w.averageRating ?? 0) < adv.minRating) {
+      return false;
+    }
+    if (adv.minSales > 0 && (w.dlCount ?? 0) < adv.minSales) return false;
+    return true;
+  }
 
   static bool _matchOnline(OnlineWork w, SearchCondition c) {
     final v = c.value.trim().toLowerCase();
@@ -430,6 +444,7 @@ class _OnlineCombineSearchState extends State<OnlineCombineSearch> {
       final excludes = widget.excludes;
       final result = base
           .where((w) => !excludes.any((c) => _matchOnline(w, c)))
+          .where((w) => _applyOnlineAdvanced(w, widget.advanced))
           .toList();
       if (!mounted) return;
       setState(() {

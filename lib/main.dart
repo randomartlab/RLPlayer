@@ -18,6 +18,7 @@ import 'src/providers/ui_settings_provider.dart';
 import 'src/screens/audio_player_screen.dart';
 import 'src/screens/main_screen.dart';
 import 'src/widgets/mini_player.dart';
+import 'src/widgets/mini_player_visibility.dart';
 import 'src/services/audio_player_service.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'src/services/download_service.dart';
@@ -482,22 +483,24 @@ class _GlobalMiniPlayerState extends State<_GlobalMiniPlayer>
 
   @override
   Widget build(BuildContext context) {
-    // 监听路由版本 + 播放页开关信号；音频状态 builder 内现取。
-    return ValueListenableBuilder<int>(
-      valueListenable: _routeObserver.version,
-      builder: (context, _, _) => ValueListenableBuilder<int>(
-        valueListenable: audioPlayerActiveSignal,
-        builder: (context, _, _) {
-          final depth = _routeObserver.depth.value;
-          final audio = context.read<AudioPlayerProvider>();
-          final hasTrack = audio.currentTrack != null;
-          final playerOn = AudioPlayerScreen.active;
-          if (depth <= 0 || !hasTrack || playerOn) {
-            return const SizedBox.shrink();
-          }
-          return const MiniPlayer();
-        },
-      ),
+    // 路由变化 / 播放页开关 / 页面级隐藏（holdCount）任一变化即重判。
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        _routeObserver.version,
+        audioPlayerActiveSignal,
+        MiniPlayerController.holdCount,
+      ]),
+      builder: (context, _) {
+      final depth = _routeObserver.depth.value;
+      final audio = context.read<AudioPlayerProvider>();
+      final hasTrack = audio.currentTrack != null;
+      final playerOn = AudioPlayerScreen.active;
+      final held = MiniPlayerController.holdCount.value > 0;
+      if (depth <= 0 || !hasTrack || playerOn || held) {
+        return const SizedBox.shrink();
+      }
+      return const MiniPlayer();
+      },
     );
   }
 }

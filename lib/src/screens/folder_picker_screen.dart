@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../widgets/mini_player_visibility.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/library_provider.dart';
@@ -32,7 +33,16 @@ class _FolderPickerScreenState extends State<FolderPickerScreen> {
   @override
   void initState() {
     super.initState();
+    // 本页底部有主操作按钮（设为扫描根目录）→ 隐藏全局迷你条，
+    // 防止遮挡确认按钮（2026-09-02 用户反馈）。
+    MiniPlayerController.hold();
     _detectInitialPath();
+  }
+
+  @override
+  void dispose() {
+    MiniPlayerController.release();
+    super.dispose();
   }
 
   /// 初始路径探测：优先 MuMu 共享文件夹（模拟器环境），否则标准存储根。

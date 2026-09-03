@@ -12,6 +12,7 @@ import '../providers/mirror_provider.dart';
 import '../providers/preferences_provider.dart';
 import '../models/work.dart';
 import '../services/net_meta_service.dart';
+import '../services/preview_kind.dart';
 import '../services/translation_service.dart';
 import '../providers/audio_provider.dart';
 import '../providers/library_provider.dart';
@@ -163,17 +164,10 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
       final entities = root.listSync(recursive: true);
       for (final entity in entities) {
         if (entity is! File) continue;
-        final lower = entity.path.toLowerCase();
-        final isSubtitle = lower.endsWith('.srt') ||
-            lower.endsWith('.vtt') ||
-            lower.endsWith('.lrc');
-        final isImage = lower.endsWith('.png') ||
-            lower.endsWith('.jpg') ||
-            lower.endsWith('.jpeg') ||
-            lower.endsWith('.webp') ||
-            lower.endsWith('.gif') ||
-            lower.endsWith('.bmp');
-        if (!isSubtitle && !isImage) continue;
+        final kind = classifyPreviewFile(entity);
+        final isImage = kind.isImage;
+        final isSubtitle = kind.isSubtitle;
+        if (!isImage && !isSubtitle) continue;
         if (coverPath != null &&
             coverPath.isNotEmpty &&
             entity.path == coverPath) {

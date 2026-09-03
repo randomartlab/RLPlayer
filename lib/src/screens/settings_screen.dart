@@ -253,7 +253,7 @@ class SettingsScreen extends StatelessWidget {
                 title: const Text('界面字体大小'),
                 subtitle: Slider(
                   value: uiSettings.uiFontScale,
-                  min: 0.8,
+                  min: 0.7,
                   max: 1.4,
                   divisions: 12,
                   label:
@@ -269,7 +269,7 @@ class SettingsScreen extends StatelessWidget {
                 title: const Text('歌词字体大小'),
                 subtitle: Slider(
                   value: uiSettings.lyricFontScale,
-                  min: 0.8,
+                  min: 0.7,
                   max: 2.0,
                   divisions: 12,
                   label:

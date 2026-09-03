@@ -67,7 +67,7 @@ class UiSettingsProvider extends ChangeNotifier {
   }
 
   Future<void> setUiFontScale(double value) async {
-    _uiFontScale = value.clamp(0.8, 1.4);
+    _uiFontScale = value.clamp(0.7, 1.4);
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_uiFontScaleKey, _uiFontScale);

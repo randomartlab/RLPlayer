@@ -112,6 +112,23 @@ class _SearchScreenState extends State<SearchScreen> {
 
   // ---- 条件操作 ----
 
+  /// 是否为「CV 合作」检索：>=2 个非排除 va include 条件。
+  bool get _isVaCollab {
+    final vas = _conditions
+        .where((c) => c.type == SearchConditionType.va && !c.exclude)
+        .toList();
+    return vas.length >= 2 && _combine == SearchCombine.and;
+  }
+
+  /// va 条件按合作分隔符拆分（×、x、顿号、逗号），自动多条件。
+  static List<String> _splitVa(String raw) {
+    return raw
+        .split(RegExp(r'[×xX、，,；;]'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+
   void _addCondition(SearchCondition c) {
     setState(() => _conditions.add(c));
     _controller.clear();
@@ -437,7 +454,33 @@ class _SearchScreenState extends State<SearchScreen> {
                                 setState(() => _conditions[_editingIndex] = cond);
                                 _editingIndex = -1;
                               } else {
-                                setState(() => _conditions.add(cond));
+                                // CV 合作：va 输入可一次性多位（×/顿号/逗号）。
+                                if (type == SearchConditionType.va &&
+                                    !exclude) {
+                                  final parts = _splitVa(raw);
+                                  for (final part in parts) {
+                                    _conditions.add(SearchCondition(
+                                        type: type,
+                                        value: part,
+                                        exclude: exclude));
+                                  }
+                                  if (parts.length >= 2 &&
+                                      _combine == SearchCombine.or) {
+                                    _combine = SearchCombine.and;
+                                    WidgetsBinding.instance
+                                        .addPostFrameCallback((_) {
+                                      if (sheetContext.mounted) {
+                                        ScaffoldMessenger.of(sheetContext)
+                                            .showSnackBar(const SnackBar(
+                                                content: Text(
+                                                    '多位声优已按合作（全部满足 AND）添加；单人名去掉 ✓ 可回到 OR'),
+                                                duration: Duration(seconds: 4)));
+                                      }
+                                    });
+                                  }
+                                } else {
+                                  _conditions.add(cond);
+                                }
                               }
                               Navigator.of(sheetContext).pop();
                               _run();
@@ -597,7 +640,25 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
           // 条件 chips 区
-          if (_conditions.isNotEmpty)
+          if (_conditions.isNotEmpty) ...[
+            if (_isVaCollab)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(UiSpacing.medium,
+                    UiSpacing.xSmall, UiSpacing.medium, 0),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.groups_2_outlined,
+                        size: 15, color: scheme.primary),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text('CV 合作检索：作品需同时含这些声优（全部满足 AND）',
+                          style: TextStyle(
+                              fontSize: 11, color: scheme.primary)),
+                    ),
+                  ],
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.symmetric(
                   horizontal: UiSpacing.medium, vertical: UiSpacing.xSmall),
@@ -644,6 +705,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 ],
               ),
             ),
+          ],
           // 高级筛选（搜索 M3：评分/年龄/销量）。
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: UiSpacing.medium),

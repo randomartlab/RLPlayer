@@ -432,6 +432,59 @@ class KikoeruApiService {
     return const [];
   }
 
+  // ---- 账号播放列表（kikoeru/kikoflu 协议，2026-09-03）----
+
+  /// 拉当前用户播放列表。优先 /api/playlist/get-playlists 风格
+  /// （现代 kikoeru-express），失败回退 GET /api/playlists（官方风格）。
+  Future<List<Map<String, dynamic>>> getAccountPlaylists() async {
+    // 风格一：get-playlists 分页返回。
+    try {
+      final resp = await _dio.get('/api/playlist/get-playlists',
+          queryParameters: {'page': 1, 'pageSize': 100, 'filterBy': 'all'});
+      final data = resp.data;
+      if (data is Map<String, dynamic>) {
+        for (final key in const ['playlists', 'list', 'data', 'items']) {
+          final l = data[key];
+          if (l is List && l.isNotEmpty) {
+            return l.cast<Map<String, dynamic>>();
+          }
+        }
+        final l = data['playlists'];
+        if (l is List) return l.cast<Map<String, dynamic>>();
+      }
+    } catch (_) {/* fallthrough */}
+    // 风格二：官方 GET /api/playlists（可能直接是列表）。
+    final resp = await _dio.get('/api/playlists');
+    final data = resp.data;
+    if (data is List) return data.cast<Map<String, dynamic>>();
+    if (data is Map<String, dynamic>) {
+      for (final key in const ['playlists', 'list', 'data', 'items']) {
+        final l = data[key];
+        if (l is List) return l.cast<Map<String, dynamic>>();
+      }
+    }
+    return const [];
+  }
+
+  /// 新建播放列表并返回 id（未解析出 id 时返回 null）。
+  Future<String?> createPlaylist(String name) async {
+    final resp = await _dio.post('/api/playlist/create-playlist',
+        data: {'name': name, 'privacy': 0, 'locale': 'zh-CN', 'works': []});
+    final data = resp.data;
+    if (data is Map<String, dynamic>) {
+      final id = data['id'] ?? data['playlist_id'] ?? data['data']?['id'];
+      if (id != null) return id.toString();
+    }
+    return null;
+  }
+
+  /// 添加作品（works 传 RJ 数字字符串）到账号播放列表。
+  Future<void> addWorksToPlaylist(
+      String playlistId, List<String> works) async {
+    await _dio.post('/api/playlist/add-works-to-playlist',
+        data: {'id': playlistId, 'works': works});
+  }
+
   // ---- 媒体 URL（token 走查询参数，播放器无需 Authorization header） ----
 
   /// 下载封面字节（网络封面兜底落盘用）。

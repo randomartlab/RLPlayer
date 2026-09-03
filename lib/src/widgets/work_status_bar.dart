@@ -13,6 +13,7 @@ import '../providers/library_provider.dart';
 import '../providers/mirror_provider.dart';
 import '../providers/online_provider.dart';
 import '../utils/ui_tokens.dart';
+import 'account_playlist_sheet.dart';
 
 enum WorkStatus { none, marked, listening, listened, replay, postponed }
 
@@ -272,12 +273,34 @@ class _WorkStatusBarState extends State<WorkStatusBar> {
                 ),
             ],
           ),
-          if (mirror.hasAnyLogin)
+          if (numeric != null)
             Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text('状态/评分会同步到你的账号；未登录则仅保存在本机',
-                  style: TextStyle(
-                      fontSize: 10, color: scheme.onSurfaceVariant)),
+              padding: const EdgeInsets.only(top: 4),
+              child: Wrap(
+                spacing: UiSpacing.medium,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => showAccountPlaylistSheet(
+                      context,
+                      workId: '$numeric',
+                      workTitle: widget.workTitle ?? widget.rjCode,
+                    ),
+                    icon: const Icon(Icons.playlist_add, size: 14),
+                    label: const Text('账号播放列表',
+                        style: TextStyle(fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4)),
+                  ),
+                  Text(mirror.hasAnyLogin
+                      ? '状态/评分同步账号'
+                      : '登录后状态/评分/播放列表将同步账号',
+                      style: TextStyle(
+                          fontSize: 10, color: scheme.onSurfaceVariant)),
+                ],
+              ),
             ),
         ],
       ),

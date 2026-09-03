@@ -408,6 +408,28 @@ class MirrorProvider extends ChangeNotifier {
     return list ?? const [];
   }
 
+  Future<List<Map<String, dynamic>>> fetchAccountPlaylists() async {
+    return await withLoginHost((api) => api.getAccountPlaylists()) ??
+        const [];
+  }
+
+  Future<bool> createAccountPlaylist(String name) async {
+    final ok = await withLoginHost((api) async {
+      await api.createPlaylist(name);
+      return true;
+    });
+    return ok ?? false;
+  }
+
+  Future<bool> addWorkToAccountPlaylist(
+      String playlistId, String workId) async {
+    final ok = await withLoginHost((api) async {
+      await api.addWorksToPlaylist(playlistId, [workId]);
+      return true;
+    });
+    return ok ?? false;
+  }
+
   /// 作品评论拉取：优先走「当前镜像已登录」的会话；若当前镜像未登录
   /// 但其他镜像登录过（自动测速切换场景），临时用登录过的镜像请求并
   /// 恢复（实机反馈 2026-09-02：one 登录后激活镜像切走 → 评论 404）。

@@ -22,6 +22,9 @@ class OnlineWork {
     this.sourceId,
     this.description,
     this.children,
+    this.progress,
+    this.myRating,
+    this.reviewText,
   });
 
   final int id;
@@ -51,6 +54,15 @@ class OnlineWork {
 
   /// 文件树（详情接口返回；列表接口为 null）。
   final List<OnlineFileNode>? children;
+
+  /// 当前登录用户的标记（marked/listening/listened/replay/postponed，2026-09-03）。
+  final String? progress;
+
+  /// 当前登录用户评分（1-5）。
+  final int? myRating;
+
+  /// 当前登录用户评语。
+  final String? reviewText;
 
   factory OnlineWork.fromJson(Map<String, dynamic> json) {
     return OnlineWork(
@@ -87,6 +99,10 @@ class OnlineWork {
           ?.map((child) =>
               OnlineFileNode.fromJson(child as Map<String, dynamic>))
           .toList(),
+      progress: json['progress'] as String?,
+      myRating: ((json['rating'] ?? json['my_rating']) as num?)?.toInt(),
+      reviewText:
+          (json['review_text'] ?? json['reviewText']) as String?,
     );
   }
 

@@ -89,7 +89,12 @@ class OnlineProvider extends ChangeNotifier {
   String? get error => _error;
   String get order => _order;
 
-  bool get hasMore => _currentPage < _totalPages;
+  /// 保守分页：服务端 totalPages 异常（=当前页）但上一页满载时仍可继续。
+  bool get hasMore {
+    if (_currentPage < _totalPages) return true;
+    if (_totalPages <= 1 && _works.length >= 20) return true;
+    return false;
+  }
 
   /// 已下载作品 RJ 号集合（在线封面墙角标，PRD §5.12）。
   Set<String> get downloadedRjCodes =>

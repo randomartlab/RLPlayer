@@ -102,8 +102,9 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 400) {
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 400 ||
+        pos.pixels >= pos.maxScrollExtent * 0.85) {
       if (_isCircleMode) {
         unawaited(_loadCircleMore());
       } else {
@@ -305,9 +306,10 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
           itemCount: _circleWorks.length + (_circleHasMore ? 1 : 0),
           itemBuilder: (context, index) {
             if (index >= _circleWorks.length) {
-              return const Padding(
-                padding: EdgeInsets.all(UiSpacing.large),
-                child: Center(child: CircularProgressIndicator()),
+              return _LoadMoreFooter(
+                loading: _circleLoading,
+                hasMore: _circleHasMore,
+                onLoad: () => _loadCircleMore(),
               );
             }
             return _OnlineWorkCard(
@@ -368,9 +370,10 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
           itemCount: online.works.length + (online.hasMore ? 1 : 0),
           itemBuilder: (context, index) {
             if (index >= online.works.length) {
-              return const Padding(
-                padding: EdgeInsets.all(UiSpacing.large),
-                child: Center(child: CircularProgressIndicator()),
+              return _LoadMoreFooter(
+                loading: online.loading,
+                hasMore: online.hasMore,
+                onLoad: () => context.read<OnlineProvider>().loadMore(),
               );
             }
             return _OnlineWorkCard(
@@ -392,9 +395,10 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
         itemCount: online.works.length + (online.hasMore ? 1 : 0),
         itemBuilder: (context, index) {
           if (index >= online.works.length) {
-            return const Padding(
-              padding: EdgeInsets.all(UiSpacing.large),
-              child: Center(child: CircularProgressIndicator()),
+            return _LoadMoreFooter(
+              loading: online.loading,
+              hasMore: online.hasMore,
+              onLoad: () => context.read<OnlineProvider>().loadMore(),
             );
           }
           return _OnlineWorkCard(
@@ -700,6 +704,56 @@ class _ViewModeIcon extends StatelessWidget {
       visualDensity: VisualDensity.compact,
       color: selected ? scheme.primary : scheme.onSurfaceVariant,
       onPressed: onTap,
+    );
+  }
+}
+
+/// 列表底部加载态（兜底按钮 + 自动触发说明，2026-09-03：
+/// 防止滚动监听失效导致下拉不继续加载）。
+class _LoadMoreFooter extends StatelessWidget {
+  const _LoadMoreFooter({
+    required this.loading,
+    required this.hasMore,
+    required this.onLoad,
+  });
+
+  final bool loading;
+  final bool hasMore;
+  final VoidCallback onLoad;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (loading) {
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(
+            child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2))),
+      );
+    }
+    if (!hasMore) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Center(
+          child: Text('已加载全部',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Center(
+        child: OutlinedButton.icon(
+          onPressed: onLoad,
+          icon: const Icon(Icons.expand_more, size: 18),
+          label: const Text('加载更多'),
+          style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact),
+        ),
+      ),
     );
   }
 }

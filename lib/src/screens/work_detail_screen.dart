@@ -555,6 +555,31 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
           // ②+ 作品状态条（想听/在听/听过/评分，2026-09-02）。
           if (work.rjCode != null) WorkStatusBar(rjCode: work.rjCode!),
 
+          // ②++ 来源文件夹标签（2026-09-04：扫描根目录名即标签维度）。
+          if (work.rootPath.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: UiSpacing.xSmall),
+              child: Row(
+                children: [
+                  Icon(Icons.folder_outlined,
+                      size: 14,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      '来源：${p.basename(work.rootPath)}',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // ③ 本地文件信息（RJ 号、文件数、总时长、本地路径）。
           Row(
             children: [

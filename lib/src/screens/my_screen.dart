@@ -3,6 +3,8 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:provider/provider.dart';
 
 import '../models/work.dart';
+import 'package:path/path.dart' as p;
+
 import '../providers/library_provider.dart';
 import '../providers/ui_settings_provider.dart';
 import '../utils/ui_tokens.dart';
@@ -182,19 +184,34 @@ class _LocalLibraryView extends StatefulWidget {
 }
 
 class _LocalLibraryViewState extends State<_LocalLibraryView> {
+  /// 当前来源文件夹筛选（''=全部，2026-09-04 标签维度）。
+  String _folder = '';
+
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryProvider>();
     final allWorks = library.works;
+    // 来源文件夹 = 作品 rootPath 的 basename（例如把一批文件放进「文件夹1」
+    // 再作为扫描根目录，则该批作品标签即「文件夹1」）。
+    final folderSet = <String>{};
+    for (final w in allWorks) {
+      final rp = w.rootPath;
+      if (rp.isNotEmpty) folderSet.add(p.basename(rp));
+    }
+    final folders = folderSet.toList()..sort();
     final works = allWorks.where((w) {
       switch (widget.viewMode) {
         case _LocalViewMode.all:
-          return true;
+          break;
         case _LocalViewMode.identified:
-          return w.rjCode != null;
+          if (w.rjCode == null) return false;
         case _LocalViewMode.unident:
-          return w.rjCode == null;
+          if (w.rjCode != null) return false;
       }
+      if (_folder.isNotEmpty && p.basename(w.rootPath) != _folder) {
+        return false;
+      }
+      return true;
     }).toList();
     final unident = allWorks.where((w) => w.rjCode == null).toList();
     final scheme = Theme.of(context).colorScheme;
@@ -220,6 +237,44 @@ class _LocalLibraryViewState extends State<_LocalLibraryView> {
             },
           ),
         ),
+        // 来源文件夹标签筛选（2026-09-04）。
+        if (folders.length > 1)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(UiSpacing.medium,
+                UiSpacing.xSmall, UiSpacing.medium, 0),
+            child: SizedBox(
+              height: 36,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: const Text('全部来源',
+                          style: TextStyle(fontSize: 12)),
+                      selected: _folder.isEmpty,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (_) => setState(() => _folder = ''),
+                    ),
+                  ),
+                  for (final f in folders)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        avatar: const Icon(Icons.folder_outlined,
+                            size: 14),
+                        label: Text(f,
+                            style: const TextStyle(fontSize: 12)),
+                        selected: _folder == f,
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (_) =>
+                            setState(() => _folder = _folder == f ? '' : f),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
         if (widget.viewMode == _LocalViewMode.unident && unident.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(UiSpacing.medium,
@@ -249,7 +304,9 @@ class _LocalLibraryViewState extends State<_LocalLibraryView> {
                   child: Text(
                     allWorks.isEmpty
                         ? (library.scanning ? '正在扫描…' : '本地库为空')
-                        : '该视角下暂无作品',
+                        : (_folder.isNotEmpty
+                            ? '「$_folder」下暂无此视角作品'
+                            : '该视角下暂无作品'),
                     style: Theme.of(context)
                         .textTheme
                         .titleMedium

@@ -262,12 +262,15 @@ class _SearchScreenState extends State<SearchScreen> {
 
 
 
-            return Padding(
+            return AnimatedPadding(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
               padding: EdgeInsets.only(
                   bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
               child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(UiSpacing.large),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(UiSpacing.large,
+                      UiSpacing.small, UiSpacing.large, UiSpacing.large),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,

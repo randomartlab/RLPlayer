@@ -17,7 +17,6 @@ import 'src/providers/theme_provider.dart';
 import 'src/providers/ui_settings_provider.dart';
 import 'src/screens/audio_player_screen.dart';
 import 'src/screens/main_screen.dart';
-import 'src/widgets/mini_player.dart';
 import 'src/widgets/mini_player_visibility.dart';
 import 'src/services/audio_player_service.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
@@ -230,16 +229,16 @@ class KikoLocalApp extends StatelessWidget {
                         textScaler:
                             TextScaler.linear(scaled.clamp(0.5, 2.0)),
                       ),
-                      // 全局迷你播放条（2026-09-02 实机需求：任何页面
-                      // 一键返回正在播放页；播放页自身隐藏）。
+                      // 悬浮播放球（2026-09-04：取代底部双宿主迷你条）。
+                      // 有播放且不在全屏播放页时，屏幕右中显示：
+                      // 环状进度 + 中心播放/暂停；下方小按钮进入全屏播放页。
                       child: Stack(
                         children: [
                           if (child != null) Positioned.fill(child: child),
                           const Positioned(
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            child: _GlobalMiniPlayer(),
+                            right: 10,
+                            top: 180,
+                            child: _GlobalPlayerOrb(),
                           ),
                         ],
                       ),
@@ -448,16 +447,24 @@ class _NetMetaBackfillSchedulerState extends State<_NetMetaBackfillScheduler> {
 }
 
 
-/// 全局迷你播放条宿主：有播放且不在播放页时显示。
-class _GlobalMiniPlayer extends StatefulWidget {
-  const _GlobalMiniPlayer();
+
+/// 全局悬浮播放球宿主：有播放且不在全屏播放页时显示（2026-09-04）。
+///
+/// - 环状 = 播放进度；中心按钮 = 播放/暂停
+/// - 下方小按钮 = 进入全屏播放页（AudioPlayerScreen）
+/// - FolderPicker 等需隐藏的页面用 [MiniPlayerController.hold]
+class _GlobalPlayerOrb extends StatefulWidget {
+  const _GlobalPlayerOrb();
 
   @override
-  State<_GlobalMiniPlayer> createState() => _GlobalMiniPlayerState();
+  State<_GlobalPlayerOrb> createState() => _GlobalPlayerOrbState();
 }
 
-class _GlobalMiniPlayerState extends State<_GlobalMiniPlayer>
+class _GlobalPlayerOrbState extends State<_GlobalPlayerOrb>
     with WidgetsBindingObserver {
+  Duration _position = Duration.zero;
+  Duration? _duration;
+
   @override
   void initState() {
     super.initState();
@@ -470,39 +477,99 @@ class _GlobalMiniPlayerState extends State<_GlobalMiniPlayer>
     super.dispose();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 路由变化时重建（检测播放页入栈/出栈）。
-    final modal = ModalRoute.of(context);
-    // ignore: unnecessary_statements
-    modal != null;
-    // 订阅路由变化：用 NavigatorObserver 代价高，此处依赖
-    // audioProvider 通知 + 周期重建即可（播放页切换必然伴随状态变化）。
+  void _openPlayer() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => const AudioPlayerScreen(),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // 路由变化 / 播放页开关 / 页面级隐藏（holdCount）任一变化即重判。
-    return AnimatedBuilder(
-      animation: Listenable.merge([
-        _routeObserver.version,
-        audioPlayerActiveSignal,
-        MiniPlayerController.holdCount,
-      ]),
-      builder: (context, _) {
-      final depth = _routeObserver.depth.value;
-      final audio = context.read<AudioPlayerProvider>();
-      final hasTrack = audio.currentTrack != null;
-      final playerOn = AudioPlayerScreen.active;
-      final held = MiniPlayerController.holdCount.value > 0;
-      // depth == 1 为主框架首页（其 Scaffold 底栏已内置 MiniPlayer，
-      // 避免与全局条叠加成两条；2026-09-04 复现修复）。
-      if (depth <= 1 || !hasTrack || playerOn || held) {
-        return const SizedBox.shrink();
-      }
-      return const MiniPlayer();
-      },
+    final scheme = Theme.of(context).colorScheme;
+    final audio = context.watch<AudioPlayerProvider>();
+    final hasTrack = audio.currentTrack != null;
+    final playerOn = AudioPlayerScreen.active;
+    final held = MiniPlayerController.holdCount.value > 0;
+    if (!hasTrack || playerOn || held) {
+      return const SizedBox.shrink();
+    }
+    final progress = _duration == null || _duration!.inMilliseconds == 0
+        ? 0.0
+        : (_position.inMilliseconds / _duration!.inMilliseconds)
+            .clamp(0.0, 1.0);
+
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 主球：进度环 + 播放/暂停。
+          GestureDetector(
+            onTap: _openPlayer,
+            child: SizedBox(
+              width: 62,
+              height: 62,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  StreamBuilder<Duration>(
+                    stream: audio.positionStream,
+                    builder: (context, snapshot) {
+                      _position = snapshot.data ?? _position;
+                      return SizedBox.expand(
+                        child: CircularProgressIndicator(
+                          value: progress,
+                          strokeWidth: 3.5,
+                          strokeCap: StrokeCap.round,
+                          backgroundColor:
+                              scheme.surfaceContainerHighest,
+                          color: scheme.primary,
+                        ),
+                      );
+                    },
+                  ),
+                  Material(
+                    color: scheme.surface.withValues(alpha: 0.92),
+                    shape: const CircleBorder(),
+                    elevation: 4,
+                    child: IconButton(
+                      onPressed: () => audio.isPlaying
+                          ? audio.pause()
+                          : audio.play(),
+                      icon: Icon(
+                        audio.isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        size: 30,
+                        color: scheme.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // 下方小按钮：进入全屏播放页。
+          GestureDetector(
+            onTap: _openPlayer,
+            child: Container(
+              width: 24,
+              height: 24,
+              margin: const EdgeInsets.only(top: 6),
+              decoration: BoxDecoration(
+                color: scheme.surface.withValues(alpha: 0.9),
+                shape: BoxShape.circle,
+                boxShadow: const [
+                  BoxShadow(color: Colors.black26, blurRadius: 4),
+                ],
+              ),
+              child: Icon(Icons.open_in_full_rounded,
+                  size: 14, color: scheme.primary),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

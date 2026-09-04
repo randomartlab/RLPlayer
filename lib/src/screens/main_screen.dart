@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../providers/ui_settings_provider.dart';
 import '../widgets/main_bottom_navigation_bar.dart';
-import '../widgets/mini_player.dart';
 import 'my_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
@@ -116,7 +115,6 @@ class _MainScreenState extends State<MainScreen> {
                 child: Column(
                   children: [
                     Expanded(child: _buildPages()),
-                    const MiniPlayer(),
                   ],
                 ),
               ),
@@ -135,7 +133,7 @@ class _MainScreenState extends State<MainScreen> {
       liquidGlass: useLiquidGlass,
       glassIntensity: uiSettings.glassIntensity,
       glassBlurMode: uiSettings.glassBlurMode,
-      miniPlayer: const MiniPlayer(),
+      miniPlayer: const SizedBox.shrink(),
     );
 
     return Scaffold(

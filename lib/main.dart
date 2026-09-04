@@ -496,7 +496,9 @@ class _GlobalMiniPlayerState extends State<_GlobalMiniPlayer>
       final hasTrack = audio.currentTrack != null;
       final playerOn = AudioPlayerScreen.active;
       final held = MiniPlayerController.holdCount.value > 0;
-      if (depth <= 0 || !hasTrack || playerOn || held) {
+      // depth == 1 为主框架首页（其 Scaffold 底栏已内置 MiniPlayer，
+      // 避免与全局条叠加成两条；2026-09-04 复现修复）。
+      if (depth <= 1 || !hasTrack || playerOn || held) {
         return const SizedBox.shrink();
       }
       return const MiniPlayer();

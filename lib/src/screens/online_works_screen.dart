@@ -329,7 +329,8 @@ class _OnlineWorksScreenState extends State<OnlineWorksScreen> {
     final library = context.watch<LibraryProvider>();
     final likedIds = library.likedRjCodes
         .map((rj) => rj.replaceFirst(RegExp(r'^(RJ|BJ|VJ)', caseSensitive: false), ''))
-        .where((n) => n.isNotEmpty)
+        .map(int.tryParse)
+        .whereType<int>()
         .toSet();
     final List<OnlineWork> works = likedOnly
         ? online.works
@@ -472,8 +473,10 @@ mixin _OnlineCardBase {
       {double? aspectRatio, double? width, double? height}) {
     final online = context.watch<OnlineProvider>();
     final mirror = context.read<MirrorProvider>();
+    final library = context.watch<LibraryProvider>();
     final scheme = Theme.of(context).colorScheme;
     final downloaded = online.downloadedRjCodes.contains(work.rjCode);
+    final liked = library.isLiked(work.rjCode);
 
     Widget cover = _cover(context, mirror, work);
 
@@ -494,6 +497,27 @@ mixin _OnlineCardBase {
             bottom: UiSpacing.xSmall,
             child: _badge('R18', color: scheme.error),
           ),
+        // ♥ 本机喜欢快捷（在线流也可标记/筛选，2026-09-04）。
+        Positioned(
+          left: UiSpacing.xSmall,
+          top: UiSpacing.xSmall,
+          child: GestureDetector(
+            onTap: () =>
+                library.toggleLike(work.rjCode, work.title),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.black38,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                liked ? Icons.favorite : Icons.favorite_border,
+                size: 15,
+                color: liked ? Colors.pinkAccent : Colors.white,
+              ),
+            ),
+          ),
+        ),
         if (downloaded)
           Positioned(
             right: UiSpacing.xSmall,

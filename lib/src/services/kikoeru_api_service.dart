@@ -486,18 +486,37 @@ class KikoeruApiService {
   }
 
   /// 歌单内作品（/api/playlist/get-playlist-works）。
+  /// 分页拉取直到取完（服务器常见每页 12/20；2026-09-04 反馈只返回 12 条）。
   Future<List<Map<String, dynamic>>> getPlaylistWorks(
       String playlistId) async {
-    final resp = await _dio.get('/api/playlist/get-playlist-works',
-        queryParameters: {'id': playlistId});
-    final data = resp.data;
-    if (data is Map<String, dynamic>) {
-      for (final key in const ['works', 'list', 'items', 'data']) {
-        final l = data[key];
-        if (l is List) return l.cast<Map<String, dynamic>>();
+    final out = <Map<String, dynamic>>[];
+    var page = 1;
+    int? totalCount;
+    while (page <= 100) {
+      final resp = await _dio.get('/api/playlist/get-playlist-works',
+          queryParameters: {'id': playlistId, 'page': page, 'pageSize': 100});
+      final data = resp.data;
+      List<dynamic>? pageItems;
+      if (data is Map<String, dynamic>) {
+        totalCount ??= data['pagination'] is Map
+            ? ((data['pagination'] as Map)['totalCount'] as num?)?.toInt()
+            : null;
+        for (final key in const ['works', 'list', 'items', 'data']) {
+          final l = data[key];
+          if (l is List) {
+            pageItems = l;
+            break;
+          }
+        }
       }
+      if (pageItems == null || pageItems.isEmpty) break;
+      out.addAll(pageItems.cast<Map<String, dynamic>>());
+      final size = pageItems.length;
+      if (size < 100) break;
+      if (totalCount != null && out.length >= totalCount) break;
+      page++;
     }
-    return const [];
+    return out;
   }
 
   // ---- 媒体 URL（token 走查询参数，播放器无需 Authorization header） ----

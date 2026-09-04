@@ -523,6 +523,10 @@ class _SearchScreenState extends State<SearchScreen> {
         default:
           if (w.rjCode != null) local.add(w.rjCode!);
           local.add(w.title);
+          if (w.circleName != null) local.add(w.circleName!);
+          if (meta?.netCircle != null) local.add(meta!.netCircle!);
+          local.addAll(w.vasNames);
+          local.addAll(meta?.netVas ?? const []);
       }
     }
     final out = <Map<String, dynamic>>[];

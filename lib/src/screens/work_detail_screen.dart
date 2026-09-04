@@ -129,6 +129,9 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
   /// 网络相关推荐（asmr.one 同社团，M5 用户需求）。
   List<OnlineWork> _onlineRelated = [];
 
+  /// 会话级相关推荐缓存（同一 RJ 5 分钟内不重复拉取，2026-09-04）。
+  static final Map<int, (DateTime, List<OnlineWork>)> _relatedCache = {};
+
   @override
   void initState() {
     super.initState();
@@ -210,6 +213,20 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
         !context.read<PreferencesProvider>().metaEnabled) {
       return;
     }
+    // 缓存快路径：已有元数据（含 noResult）直接展示，不闪烁/不再请求
+    //（2026-09-04 反馈：每次进详情都像在重新拉取）。
+    if (!forceRefresh) {
+      final db = context.read<LibraryProvider>().database;
+      final cached = db == null ? null : await db.queryNetMeta(rjCode);
+      if (cached != null) {
+        setState(() {
+          _netMeta = cached.noResult ? null : cached;
+          _netMetaLoading = false;
+        });
+        if (!cached.noResult) await _loadOnlineRelated();
+        return;
+      }
+    }
     setState(() => _netMetaLoading = true);
     try {
       final meta = await context
@@ -244,14 +261,22 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
       final numeric = int.tryParse((effective.rjCode ?? '')
           .replaceFirst(RegExp('^(RJ|BJ|VJ)', caseSensitive: false), ''));
       if (numeric == null) return;
+      final cached = _relatedCache[numeric];
+      if (cached != null &&
+          DateTime.now().difference(cached.$1).inSeconds < 300) {
+        if (mounted) setState(() => _onlineRelated = cached.$2);
+        return;
+      }
       final detail = await mirror.api.getWork(numeric);
       final circleId = detail.circleId;
       if (circleId == null) return;
       final related = await mirror.api.getCircleWorks(circleId, pageSize: 12);
       final filtered =
           related.where((w) => w.id != numeric).toList(growable: false);
+      final picked = filtered.take(10).toList(growable: false);
+      _relatedCache[numeric] = (DateTime.now(), picked);
       if (mounted) {
-        setState(() => _onlineRelated = filtered.take(10).toList());
+        setState(() => _onlineRelated = picked);
       }
     } catch (_) {
       // 网络推荐 best-effort：失败静默（本地推荐仍显示）。

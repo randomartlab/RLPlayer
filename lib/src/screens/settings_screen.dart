@@ -287,6 +287,14 @@ class SettingsScreen extends StatelessWidget {
             title: '数据与历史',
             children: [
               ListTile(
+                leading: _LeadingIcon(
+                    icon: Icons.cloud_sync_outlined, context: context),
+                title: const Text('刷新全部网络元数据'),
+                subtitle: const Text('对本地全部 RJ 重新拉取 asmr.one/DLsite（慢，可后台）'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _refreshAllMeta(context),
+              ),
+              ListTile(
                 leading: _LeadingIcon(icon: Icons.history, context: context),
                 title: const Text('清空播放历史'),
                 subtitle: const Text('删除全部断点与播放记录（本地音频不受影响）'),
@@ -318,6 +326,47 @@ class SettingsScreen extends StatelessWidget {
   }
 
   /// 确认清空播放历史（2026-09-03）。
+  /// 全局元数据手动刷新（2026-09-04）：遍历本地 RJ 强制拉取一次。
+  Future<void> _refreshAllMeta(BuildContext context) async {
+    final library = context.read<LibraryProvider>();
+    final metaService = context.read<NetMetaService>();
+    final db = library.database;
+    if (db == null) return;
+    final rjSet = <String>{};
+    for (final w in library.works) {
+      final rj = w.rjCode;
+      if (rj != null) rjSet.add(rj);
+    }
+    try {
+      for (final row in await db.queryAllNetMeta()) {
+        final rj = row.rjCode;
+        if (rj.isNotEmpty) rjSet.add(rj);
+      }
+    } catch (_) {}
+    if (rjSet.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('本地库没有带 RJ 的作品')));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('开始刷新 ${rjSet.length} 个作品的元数据…'),
+        duration: const Duration(seconds: 2)));
+    var done = 0;
+    for (final rj in rjSet) {
+      try {
+        await metaService.getMeta(rj, forceRefresh: true);
+      } catch (_) {}
+      done++;
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('元数据刷新完成（$done 个）')));
+    await library.reloadWorks();
+  }
+
   Future<void> _confirmClearHistory(BuildContext context) async {
     final library = context.read<LibraryProvider>();
     final db = library.database;

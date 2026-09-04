@@ -16,7 +16,7 @@ class LocalLibraryDatabase {
   LocalLibraryDatabase._(this._db);
 
   static const String _dbName = 'kiko_local.db';
-  static const int _dbVersion = 10;
+  static const int _dbVersion = 11;
 
   /// 全部迁移逻辑的单一来源（v1 之后每版增量；onCreate 与 onUpgrade 共用，
   /// 杜绝 schema 漂移——修复“全新安装缺列”致命 bug 2026-09-02）。
@@ -84,6 +84,12 @@ class LocalLibraryDatabase {
           'FOREIGN KEY(playlist_id) REFERENCES playlists(id) '
           'ON DELETE CASCADE)');
     }
+    if (oldVersion < 11) {
+      // v11(2026-09-04): 来源扫描根目录（文件夹标签）。
+      try {
+        await db.execute('ALTER TABLE works ADD COLUMN source_root TEXT');
+      } catch (_) {}
+    }
     if (oldVersion < 10) {
       // v10(2026-09-03): ① 旧状态名 wantListen → marked（对齐 kikoeru 协议五态）；
       // ② 本机独立喜欢（不与 one 站收藏混）。
@@ -150,6 +156,7 @@ class LocalLibraryDatabase {
         title TEXT NOT NULL,
         circle_name TEXT,
         root_path TEXT NOT NULL,
+        source_root TEXT,
         cover_path TEXT,
         cover_source TEXT NOT NULL DEFAULT 'placeholder',
         duration_seconds INTEGER,
@@ -236,6 +243,7 @@ class LocalLibraryDatabase {
           'vas_names': work.vasNames.isEmpty ? null : work.vasNames.join('\u0001'),
           'tags': work.tags.isEmpty ? null : work.tags.join('\u0001'),
           'root_path': work.rootPath,
+          'source_root': work.sourceRoot,
           'cover_path': work.coverPath,
           'cover_source': work.coverSource.name,
           'duration_seconds': work.durationSeconds,
@@ -367,6 +375,7 @@ class LocalLibraryDatabase {
           .where((v) => v.isNotEmpty)
           .toList(),
       rootPath: row['root_path'] as String,
+      sourceRoot: row['source_root'] as String?,
       coverPath: row['cover_path'] as String?,
       coverSource: CoverSource.values.firstWhere(
         (s) => s.name == row['cover_source'],
@@ -466,6 +475,11 @@ class LocalLibraryDatabase {
   /// 全部状态（我的页列表用）。
   Future<List<Map<String, dynamic>>> allWorkStatus() async {
     return _db.query('work_status', orderBy: 'updated_at DESC');
+  }
+
+  Future<void> updateSourceRoot(int workId, String sourceRoot) async {
+    await _db.update('works', {'source_root': sourceRoot},
+        where: 'id = ?', whereArgs: [workId]);
   }
 
   // ---- 本机喜欢（local_likes，v10）----

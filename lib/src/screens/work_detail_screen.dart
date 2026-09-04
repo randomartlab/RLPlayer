@@ -567,7 +567,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
                   const SizedBox(width: 4),
                   Flexible(
                     child: Text(
-                      '来源：${p.basename(work.rootPath)}',
+                      '来源：${context.read<LibraryProvider>().folderLabelOf(work)}',
                       style: TextStyle(
                           fontSize: 12,
                           color: Theme.of(context)

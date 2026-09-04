@@ -59,7 +59,12 @@ class LocalLibraryScanner {
       debugPrint('[KikoScan] root=$rootPath exists=$exists');
       if (!exists) continue;
       try {
+        final before = works.length;
         await _scanDirectory(root, works);
+        // 记录来源扫描根目录（文件夹标签 = root basename，2026-09-04）。
+        for (var i = before; i < works.length; i++) {
+          works[i].sourceRoot = rootPath;
+        }
       } catch (e, stack) {
         // 单个根目录失败不影响其他根目录（权限/IO 异常不静默丢失）。
         debugPrint('[KikoScan] 根目录扫描失败 root=$rootPath: $e');

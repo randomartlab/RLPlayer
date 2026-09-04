@@ -17,6 +17,7 @@ class Work {
     this.vasNames = const [],
     this.tags = const [],
     required this.rootPath,
+    this.sourceRoot,
     this.coverPath,
     this.coverSource = CoverSource.placeholder,
     this.durationSeconds,
@@ -46,6 +47,9 @@ class Work {
 
   /// RJ 文件夹绝对路径。
   final String rootPath;
+
+  /// 扫描来源根目录（文件夹标签维度，2026-09-04）。
+  final String? sourceRoot;
 
   /// 封面绝对路径（localFile 原图直读 / embedded 落盘文件）。
   final String? coverPath;
@@ -168,13 +172,14 @@ class FileNode {
 
 /// 扫描后的作品（写入数据库前的中间形态）。
 class ScannedWork {
-  const ScannedWork({
+  ScannedWork({
     this.rjCode,
     required this.title,
     this.circleName,
     this.vasNames = const [],
     this.tags = const [],
     required this.rootPath,
+    this.sourceRoot,
     this.coverPath,
     this.coverSource = CoverSource.placeholder,
     required this.durationSeconds,
@@ -195,6 +200,9 @@ class ScannedWork {
   /// 标签（本地 metadata.json tags）。
   final List<String> tags;
   final String rootPath;
+
+  /// 扫描来源根目录（用户文件夹标签；可变以便 scanRoots 回填）。
+  String? sourceRoot;
   final String? coverPath;
   final CoverSource coverSource;
   final int? durationSeconds;

@@ -17,6 +17,7 @@ import 'src/providers/theme_provider.dart';
 import 'src/providers/ui_settings_provider.dart';
 import 'src/screens/audio_player_screen.dart';
 import 'src/screens/main_screen.dart';
+import 'src/widgets/meta_warmer.dart';
 import 'src/widgets/mini_player_visibility.dart';
 import 'src/services/audio_player_service.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
@@ -254,7 +255,7 @@ class KikoLocalApp extends StatelessWidget {
                   ),
                   themeMode: settings.toThemeMode(),
                     home: StoragePermissionGate(
-                      child: _HistoryRecorder(child: MainScreen()),
+                      child: _HistoryRecorder(child: MetaWarmer(child: MainScreen())),
                     ),
                   ),
                 );

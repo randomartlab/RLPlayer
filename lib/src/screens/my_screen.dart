@@ -3,8 +3,6 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:provider/provider.dart';
 
 import '../models/work.dart';
-import 'package:path/path.dart' as p;
-
 import '../providers/library_provider.dart';
 import '../providers/ui_settings_provider.dart';
 import '../utils/ui_tokens.dart';
@@ -191,14 +189,8 @@ class _LocalLibraryViewState extends State<_LocalLibraryView> {
   Widget build(BuildContext context) {
     final library = context.watch<LibraryProvider>();
     final allWorks = library.works;
-    // 来源文件夹 = 作品 rootPath 的 basename（例如把一批文件放进「文件夹1」
-    // 再作为扫描根目录，则该批作品标签即「文件夹1」）。
-    final folderSet = <String>{};
-    for (final w in allWorks) {
-      final rp = w.rootPath;
-      if (rp.isNotEmpty) folderSet.add(p.basename(rp));
-    }
-    final folders = folderSet.toList()..sort();
+    // 来源文件夹 = 该作品所属扫描根目录名（source_root 或按根推断）。
+    final folders = library.sourceFolders;
     final works = allWorks.where((w) {
       switch (widget.viewMode) {
         case _LocalViewMode.all:
@@ -208,7 +200,7 @@ class _LocalLibraryViewState extends State<_LocalLibraryView> {
         case _LocalViewMode.unident:
           if (w.rjCode != null) return false;
       }
-      if (_folder.isNotEmpty && p.basename(w.rootPath) != _folder) {
+      if (_folder.isNotEmpty && library.folderLabelOf(w) != _folder) {
         return false;
       }
       return true;

@@ -86,6 +86,34 @@ class LibraryProvider extends ChangeNotifier {
     }
   }
 
+  /// 作品来源文件夹标签：优先 source_root（扫描根）；旧数据按最长前缀
+  /// 匹配扫描根推断；否则取作品目录的父目录名（2026-09-04）。
+  String folderLabelOf(Work w) {
+    final sr = w.sourceRoot;
+    if (sr != null && sr.isNotEmpty) {
+      return sr.split(RegExp(r'[/\\]')).last;
+    }
+    String? best;
+    for (final r in _roots) {
+      if (w.rootPath == r || w.rootPath.startsWith('$r/')) {
+        if (best == null || r.length > best.length) best = r;
+      }
+    }
+    if (best != null) return best.split(RegExp(r'[/\\]')).last;
+    final seg = w.rootPath.split(RegExp(r'[/\\]'));
+    return seg.length >= 2 ? seg[seg.length - 2] : (seg.isNotEmpty ? seg.last : '');
+  }
+
+  /// 全部来源文件夹名（有作品的），供筛选 chips。
+  List<String> get sourceFolders {
+    final set = <String>{};
+    for (final w in _works) {
+      final label = folderLabelOf(w);
+      if (label.isNotEmpty) set.add(label);
+    }
+    return set.toList()..sort();
+  }
+
   bool isLiked(String rjCode) => _likedRj.contains(rjCode);
 
   /// 切换本机喜欢并落库。

@@ -1,5 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
@@ -449,12 +450,12 @@ class _NetMetaBackfillSchedulerState extends State<_NetMetaBackfillScheduler> {
 
 
 
-/// 全局悬浮播放球宿主（2026-09-05 交互重设计）：
+/// 全局悬浮播放胶囊（2026-09-05）：明确交互按键，避免"找不到/点不中"。
 ///
-/// 单击主球 = 进入全屏播放页（大命中区，符合大多数操作直觉）
-/// 双击主球 = 播放 / 暂停
-/// 中央图标只读展示当前播放状态（不拦截单击）
-/// 下方小按钮 = 进入全屏播放页（备用入口）
+/// 结构（右下角，宽约 236dp）：
+///  [⏸/▶ 播放暂停] [标题 小字] [播放器 ▶ 大按钮]
+/// - 点击「播放/暂停」或胶囊空白右侧按钮 = 进全屏播放页
+/// - 首帧可见时输出 ORB_SHOW / 隐藏输出 ORB_HIDE（logcat 可验）
 class _GlobalPlayerOrb extends StatefulWidget {
   const _GlobalPlayerOrb();
 
@@ -466,6 +467,7 @@ class _GlobalPlayerOrbState extends State<_GlobalPlayerOrb>
     with WidgetsBindingObserver {
   Duration _position = Duration.zero;
   Duration? _duration;
+  bool _lastVisible = false;
   static bool _hinted = false;
 
   @override
@@ -481,6 +483,7 @@ class _GlobalPlayerOrbState extends State<_GlobalPlayerOrb>
   }
 
   void _openPlayer() {
+    debugPrint('[Orb] openPlayer push');
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => const AudioPlayerScreen(),
@@ -504,101 +507,120 @@ class _GlobalPlayerOrbState extends State<_GlobalPlayerOrb>
     final hasTrack = audio.currentTrack != null;
     final playerOn = AudioPlayerScreen.active;
     final held = MiniPlayerController.holdCount.value > 0;
-    if (!hasTrack || playerOn || held) {
+    final visible = hasTrack && !playerOn && !held;
+    if (!visible) {
+      if (_lastVisible) debugPrint('[Orb] HIDE');
+      _lastVisible = false;
       return const SizedBox.shrink();
     }
+    if (!_lastVisible) debugPrint('[Orb] SHOW track=${audio.currentTrack?.title}');
+    _lastVisible = true;
     if (!_hinted) {
       _hinted = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('悬浮球：单击进入播放器，双击播放/暂停'),
-              duration: Duration(seconds: 3),
-            ),
-          );
+          try {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('悬浮控制：点 ▶/⏸ 播放暂停，点「播放器」进全屏'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          } catch (_) {}
         }
       });
     }
+    final track = audio.currentTrack!;
     final progress = _duration == null || _duration!.inMilliseconds == 0
         ? 0.0
         : (_position.inMilliseconds / _duration!.inMilliseconds)
             .clamp(0.0, 1.0);
 
     return SafeArea(
-      child: Semantics(
-        label: '播放控制球，单击进入播放器，双击播放暂停',
-        button: true,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 主球：单击进全屏，双击播放/暂停；环 = 进度。
-            GestureDetector(
-              onTap: _openPlayer,
-              onDoubleTap: _togglePlay,
-              child: SizedBox(
-                width: 76,
-                height: 76,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    StreamBuilder<Duration>(
-                      stream: audio.positionStream,
-                      builder: (context, snapshot) {
-                        _position = snapshot.data ?? _position;
-                        return SizedBox.expand(
-                          child: CircularProgressIndicator(
-                            value: progress,
-                            strokeWidth: 4,
-                            strokeCap: StrokeCap.round,
-                            backgroundColor:
-                                scheme.surfaceContainerHighest,
-                            color: scheme.primary,
-                          ),
-                        );
-                      },
+      child: Align(
+        alignment: Alignment.bottomRight,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 10, bottom: 96),
+          child: Material(
+            elevation: 10,
+            color: scheme.surface,
+            borderRadius: BorderRadius.circular(30),
+            child: Container(
+              width: 244,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(
+                    color: scheme.outline.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 播放/暂停（明确按钮）
+                  IconButton(
+                    onPressed: _togglePlay,
+                    tooltip: audio.isPlaying ? '暂停' : '播放',
+                    icon: Icon(
+                      audio.isPlaying
+                          ? Icons.pause_circle_filled
+                          : Icons.play_circle_filled,
+                      size: 36,
+                      color: scheme.primary,
                     ),
-                    // 中心状态图标（只读展示，不拦截外层手势）。
-                    IgnorePointer(
-                      child: Material(
-                        color: scheme.surface.withValues(alpha: 0.95),
-                        shape: const CircleBorder(),
-                        elevation: 6,
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Icon(
-                            audio.isPlaying
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            size: 28,
-                            color: scheme.primary,
+                  ),
+                  // 进度环小圆（状态）
+                  SizedBox(
+                    width: 26,
+                    height: 26,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox.expand(
+                          child: StreamBuilder<Duration>(
+                            stream: audio.positionStream,
+                            builder: (context, snapshot) {
+                              _position = snapshot.data ?? _position;
+                              return CircularProgressIndicator(
+                                value: progress,
+                                strokeWidth: 3,
+                                backgroundColor:
+                                    scheme.surfaceContainerHighest,
+                                color: scheme.primary,
+                              );
+                            },
                           ),
+                        ),
+                        Icon(Icons.graphic_eq,
+                            size: 12, color: scheme.onSurfaceVariant),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // 标题（点击进播放器）
+                  Expanded(
+                    child: InkWell(
+                      onTap: _openPlayer,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Text(
+                          track.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12),
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  // 进入播放器（明确按钮）
+                  TextButton(
+                    onPressed: _openPlayer,
+                    child: const Text('播放器'),
+                  ),
+                  const SizedBox(width: 4),
+                ],
               ),
             ),
-            // 下方小按钮：进入全屏播放页（备用入口）。
-            GestureDetector(
-              onTap: _openPlayer,
-              child: Container(
-                width: 30,
-                height: 30,
-                margin: const EdgeInsets.only(top: 8),
-                decoration: BoxDecoration(
-                  color: scheme.surface.withValues(alpha: 0.92),
-                  shape: BoxShape.circle,
-                  boxShadow: const [
-                    BoxShadow(color: Colors.black26, blurRadius: 4),
-                  ],
-                ),
-                child: Icon(Icons.open_in_full_rounded,
-                    size: 17, color: scheme.primary),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

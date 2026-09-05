@@ -199,6 +199,12 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         actions: [
+          // 收起为悬浮球（最小化返回来源页；2026-09-05）。
+          IconButton(
+            icon: const Icon(Icons.picture_in_picture_alt_outlined),
+            tooltip: '收起为悬浮球',
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
           // 循环模式（PRD §5.6.3 三态）。
           IconButton(
             icon: _loopModeIcon(audio.loopMode),

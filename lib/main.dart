@@ -61,6 +61,13 @@ Future<void> main() async {
 /// 全局路由深度观察者（被 MaterialApp 引用）。
 final _RouteDepthObserver _routeObserver = _RouteDepthObserver();
 
+/// 根导航 key：悬浮层位于 MaterialApp.builder（Navigator 之上），
+/// 直接 Navigator.of(builderContext) 找不到 Navigator——所有浮层跳转
+/// 一律走该 key（2026-09-05 实机修复：此前点「播放器」无反应的根因）。
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<ScaffoldMessengerState> rootMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
+
 /// 记录根导航器真实路由栈（主页之上有无二级页面）。
 ///
 /// 用「真实栈」而非计数器：didPush/didPop/didRemove/didReplace/didShow
@@ -216,6 +223,8 @@ class KikoLocalApp extends StatelessWidget {
 
                 return _NetMetaBackfillScheduler(
                   child: MaterialApp(
+                    navigatorKey: rootNavigatorKey,
+                    scaffoldMessengerKey: rootMessengerKey,
                     navigatorObservers: [_routeObserver],
                     title: 'RLPlayer',
                   debugShowCheckedModeBanner: false,
@@ -450,12 +459,13 @@ class _NetMetaBackfillSchedulerState extends State<_NetMetaBackfillScheduler> {
 
 
 
-/// 全局悬浮播放胶囊（2026-09-05）：明确交互按键，避免"找不到/点不中"。
-///
-/// 结构（右下角，宽约 236dp）：
-///  [⏸/▶ 播放暂停] [标题 小字] [播放器 ▶ 大按钮]
-/// - 点击「播放/暂停」或胶囊空白右侧按钮 = 进全屏播放页
-/// - 首帧可见时输出 ORB_SHOW / 隐藏输出 ORB_HIDE（logcat 可验）
+/// 全局悬浮播放按钮（2026-09-05 结构重做）：
+/// 右下角圆形 62dp，不遮挡正文排版：
+/// - 单击 = 进入全屏播放页（rootNavigatorKey 跳转，稳定）
+/// - 双击 = 播放 / 暂停
+/// - 中心图标只读显示播放状态；外圈 = 播放进度
+/// 挂在 MaterialApp.builder 顶层，稳定覆盖所有页面最上层
+/// （全屏播放页自身与需要净空的页面除外）。
 class _GlobalPlayerOrb extends StatefulWidget {
   const _GlobalPlayerOrb();
 
@@ -483,8 +493,8 @@ class _GlobalPlayerOrbState extends State<_GlobalPlayerOrb>
   }
 
   void _openPlayer() {
-    debugPrint('[Orb] openPlayer push');
-    Navigator.of(context).push(
+    debugPrint('[Orb] openPlayer push via rootKey');
+    rootNavigatorKey.currentState?.push(
       MaterialPageRoute<void>(
         builder: (context) => const AudioPlayerScreen(),
       ),
@@ -518,19 +528,16 @@ class _GlobalPlayerOrbState extends State<_GlobalPlayerOrb>
     if (!_hinted) {
       _hinted = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          try {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('悬浮控制：点 ▶/⏸ 播放暂停，点「播放器」进全屏'),
-                duration: Duration(seconds: 3),
-              ),
-            );
-          } catch (_) {}
-        }
+        try {
+          rootMessengerKey.currentState?.showSnackBar(
+            const SnackBar(
+              content: Text('悬浮按钮：单击进全屏播放器，双击播放/暂停'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        } catch (_) {}
       });
     }
-    final track = audio.currentTrack!;
     final progress = _duration == null || _duration!.inMilliseconds == 0
         ? 0.0
         : (_position.inMilliseconds / _duration!.inMilliseconds)
@@ -540,84 +547,55 @@ class _GlobalPlayerOrbState extends State<_GlobalPlayerOrb>
       child: Align(
         alignment: Alignment.bottomRight,
         child: Padding(
-          padding: const EdgeInsets.only(right: 10, bottom: 96),
-          child: Material(
-            elevation: 10,
-            color: scheme.surface,
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 244,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(
-                    color: scheme.outline.withValues(alpha: 0.25)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 播放/暂停（明确按钮）
-                  IconButton(
-                    onPressed: _togglePlay,
-                    tooltip: audio.isPlaying ? '暂停' : '播放',
-                    icon: Icon(
-                      audio.isPlaying
-                          ? Icons.pause_circle_filled
-                          : Icons.play_circle_filled,
-                      size: 36,
-                      color: scheme.primary,
-                    ),
-                  ),
-                  // 进度环小圆（状态）
-                  SizedBox(
-                    width: 26,
-                    height: 26,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        SizedBox.expand(
-                          child: StreamBuilder<Duration>(
-                            stream: audio.positionStream,
-                            builder: (context, snapshot) {
-                              _position = snapshot.data ?? _position;
-                              return CircularProgressIndicator(
-                                value: progress,
-                                strokeWidth: 3,
-                                backgroundColor:
-                                    scheme.surfaceContainerHighest,
-                                color: scheme.primary,
-                              );
-                            },
+          padding: const EdgeInsets.only(right: 14, bottom: 96),
+          child: Semantics(
+            label: '悬浮播放按钮：单击进入播放器，双击播放暂停',
+            button: true,
+            child: GestureDetector(
+              onTap: _openPlayer,
+              onDoubleTap: _togglePlay,
+              child: SizedBox(
+                width: 62,
+                height: 62,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    StreamBuilder<Duration>(
+                      stream: audio.positionStream,
+                      builder: (context, snapshot) {
+                        _position = snapshot.data ?? _position;
+                        return SizedBox.expand(
+                          child: CircularProgressIndicator(
+                            value: progress,
+                            strokeWidth: 4,
+                            strokeCap: StrokeCap.round,
+                            backgroundColor:
+                                scheme.surfaceContainerHighest,
+                            color: scheme.primary,
                           ),
-                        ),
-                        Icon(Icons.graphic_eq,
-                            size: 12, color: scheme.onSurfaceVariant),
-                      ],
+                        );
+                      },
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  // 标题（点击进播放器）
-                  Expanded(
-                    child: InkWell(
-                      onTap: _openPlayer,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Text(
-                          track.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12),
+                    IgnorePointer(
+                      child: Material(
+                        color: scheme.surface.withValues(alpha: 0.95),
+                        shape: const CircleBorder(),
+                        elevation: 6,
+                        child: SizedBox(
+                          width: 46,
+                          height: 46,
+                          child: Icon(
+                            audio.isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            size: 28,
+                            color: scheme.primary,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  // 进入播放器（明确按钮）
-                  TextButton(
-                    onPressed: _openPlayer,
-                    child: const Text('播放器'),
-                  ),
-                  const SizedBox(width: 4),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

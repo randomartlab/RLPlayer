@@ -84,6 +84,13 @@ class _RouteDepthObserver extends NavigatorObserver {
   /// 让新页面 initState（如播放页 active=true）完成后全局条重新判断。
   final ValueNotifier<int> version = ValueNotifier<int>(0);
 
+  /// 当前最顶层路由名（用于判断是否在全屏播放页等）。
+  String? get topRouteName => _stack.isEmpty
+      ? null
+      : (_stack.last.settings.name?.isNotEmpty == true
+          ? _stack.last.settings.name
+          : null);
+
   /// 路由变化后的全局条刷新入口。
   void _notify() {
     depth.value = _stack.isEmpty ? 0 : _stack.length - 1;
@@ -484,18 +491,25 @@ class _GlobalPlayerOrbState extends State<_GlobalPlayerOrb>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _routeObserver.version.addListener(_onRouteChanged);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _routeObserver.version.removeListener(_onRouteChanged);
     super.dispose();
+  }
+
+  void _onRouteChanged() {
+    if (mounted) setState(() {});
   }
 
   void _openPlayer() {
     debugPrint('[Orb] openPlayer push via rootKey');
     rootNavigatorKey.currentState?.push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'AudioPlayer'),
         builder: (context) => const AudioPlayerScreen(),
       ),
     );
@@ -515,7 +529,8 @@ class _GlobalPlayerOrbState extends State<_GlobalPlayerOrb>
     final scheme = Theme.of(context).colorScheme;
     final audio = context.watch<AudioPlayerProvider>();
     final hasTrack = audio.currentTrack != null;
-    final playerOn = AudioPlayerScreen.active;
+    final topIsPlayer = _routeObserver.topRouteName == 'AudioPlayer';
+    final playerOn = AudioPlayerScreen.active || topIsPlayer;
     final held = MiniPlayerController.holdCount.value > 0;
     final visible = hasTrack && !playerOn && !held;
     if (!visible) {

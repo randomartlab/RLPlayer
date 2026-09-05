@@ -116,6 +116,7 @@ class _SubtitleLibraryTabState extends State<SubtitleLibraryTab> {
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+          settings: const RouteSettings(name: 'AudioPlayer'),
           builder: (context) => const AudioPlayerScreen()),
     );
   }

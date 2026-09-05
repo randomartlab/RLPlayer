@@ -245,6 +245,7 @@ class _OnlineWorkDetailScreenState extends State<OnlineWorkDetailScreen> {
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+          settings: const RouteSettings(name: 'AudioPlayer'),
           builder: (context) => const AudioPlayerScreen()),
     );
     final index = startIndex.clamp(0, tracks.length - 1);

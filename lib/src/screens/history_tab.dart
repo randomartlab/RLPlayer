@@ -73,7 +73,9 @@ class _HistoryTabState extends State<HistoryTab> {
     }
     if (!mounted) return;
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (context) => const AudioPlayerScreen()),
+      MaterialPageRoute<void>(
+          settings: const RouteSettings(name: 'AudioPlayer'),
+          builder: (context) => const AudioPlayerScreen()),
     );
   }
 

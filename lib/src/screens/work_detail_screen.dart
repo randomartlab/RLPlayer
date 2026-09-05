@@ -413,6 +413,7 @@ class _WorkDetailScreenState extends State<WorkDetailScreen> {
     if (!mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: 'AudioPlayer'),
         builder: (context) => const AudioPlayerScreen(),
       ),
     );

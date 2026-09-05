@@ -270,7 +270,8 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                     if (!context.mounted) return;
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                          builder: (context) => const AudioPlayerScreen()),
+          settings: const RouteSettings(name: 'AudioPlayer'),
+          builder: (context) => const AudioPlayerScreen()),
                     );
                   },
           ),

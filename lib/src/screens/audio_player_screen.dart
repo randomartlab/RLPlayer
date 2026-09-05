@@ -71,6 +71,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
   void initState() {
     super.initState();
     AudioPlayerScreen.active = true;
+    debugPrint('[PlayerPage] ACTIVE true');
     audioPlayerActiveSignal.value++;
     _prefSubtitleDefault =
         context.read<PreferencesProvider>().subtitleDefault;
@@ -91,6 +92,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
 
   @override
   void dispose() {
+    debugPrint('[PlayerPage] ACTIVE false (dispose)');
     AudioPlayerScreen.active = false;
     audioPlayerActiveSignal.value++;
     _coverLyricPageController.dispose();

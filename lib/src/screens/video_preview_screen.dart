@@ -2,11 +2,15 @@
 /// 支持本地文件与在线 URL（作品文件树/附加文件中的 mp4/mkv/webm 等）。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../models/lyric.dart';
+import '../services/scan_rules.dart' show decodeTextWithFallback;
+import '../services/subtitle_parser.dart' show parseVttOrSrt;
 import '../utils/ui_tokens.dart';
 
 class VideoPreviewScreen extends StatefulWidget {
@@ -44,10 +48,62 @@ class _VideoPreviewScreenState extends State<VideoPreviewScreen> {
   bool _initDone = false;
   bool _showControls = true;
 
+  // 歌词时间轴（2026-09-05：与音频同规则的文件名匹配 .lrc/.vtt/.srt）。
+  Lyrics? _lyrics;
+  int _lineIndex = -1;
+  bool _lyricsOverlay = false;
+  Timer? _ticker;
+  final ScrollController _lyricScroll = ScrollController();
+
   @override
   void initState() {
     super.initState();
     _init();
+  }
+
+  /// 本地视频：按视频文件名匹配同目录同名歌词/字幕
+  ///（video.lrc > video.vtt > video.srt，音频侧同规则）。
+  Future<void> _loadSidecarLyrics() async {
+    final path = widget.path;
+    if (path == null || widget.mode != _VideoSource.file) return;
+    final base = path.substring(0, path.lastIndexOf('.'));
+    for (final ext in const ['.lrc', '.vtt', '.srt']) {
+      final f = File('$base$ext');
+      if (!await f.exists()) continue;
+      try {
+        final content = decodeTextWithFallback(await f.readAsBytes());
+        if (content == null) continue;
+        final parsed = ext == '.lrc'
+            ? Lyrics.parse(content)
+            : parseVttOrSrt(content);
+        if (parsed != null && !parsed.isEmpty && mounted) {
+          setState(() => _lyrics = parsed);
+          _startTicker();
+        }
+        if (_lyrics != null) return;
+      } catch (_) {}
+    }
+  }
+
+  void _startTicker() {
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      final ctrl = _controller;
+      final lyrics = _lyrics;
+      if (!mounted || ctrl == null || lyrics == null) return;
+      final idx = lyrics.lineIndexAt(ctrl.value.position);
+      if (idx != _lineIndex) {
+        setState(() => _lineIndex = idx);
+        if (_lyricsOverlay && _lyricScroll.hasClients) {
+          final target = (idx * 46.0 - 120).clamp(0.0, double.infinity);
+          _lyricScroll.animateTo(
+            target,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+          );
+        }
+      }
+    });
   }
 
   Future<void> _init() async {
@@ -64,6 +120,7 @@ class _VideoPreviewScreenState extends State<VideoPreviewScreen> {
       setState(() => _initDone = true);
       await ctrl.play();
       ctrl.setLooping(false);
+      unawaited(_loadSidecarLyrics());
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '无法播放视频：$e');
@@ -72,6 +129,8 @@ class _VideoPreviewScreenState extends State<VideoPreviewScreen> {
 
   @override
   void dispose() {
+    _ticker?.cancel();
+    _lyricScroll.dispose();
     _controller?.dispose();
     super.dispose();
   }
@@ -95,6 +154,17 @@ class _VideoPreviewScreenState extends State<VideoPreviewScreen> {
         foregroundColor: Colors.white,
         title: Text(widget.title ?? '视频预览',
             style: const TextStyle(fontSize: 15)),
+        actions: [
+          if (_lyrics != null && !_lyrics!.isEmpty)
+            IconButton(
+              icon: Icon(_lyricsOverlay
+                  ? Icons.lyrics_rounded
+                  : Icons.lyrics_outlined),
+              tooltip: '歌词',
+              color: Colors.white,
+              onPressed: () => setState(() => _lyricsOverlay = !_lyricsOverlay),
+            ),
+        ],
       ),
       body: Center(
         child: _error != null
@@ -134,6 +204,35 @@ class _VideoPreviewScreenState extends State<VideoPreviewScreen> {
                 : ctrl.value.aspectRatio,
             child: VideoPlayer(ctrl),
           ),
+          // 顶部当前行歌词（随时间轴推进）。
+          if (_lyrics != null && _lineIndex >= 0 && _lineIndex < _lyrics!.lines.length)
+            Positioned(
+              left: 24,
+              right: 24,
+              top: 8,
+              child: _lyricsOverlay
+                  ? const SizedBox.shrink()
+                  : Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        _lyrics!.lines[_lineIndex].text,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          shadows: [
+                            Shadow(color: Colors.black, blurRadius: 4),
+                          ],
+                        ),
+                      ),
+                    ),
+            ),
           // 播放/暂停中间按钮。
           ValueListenableBuilder<VideoPlayerValue>(
             valueListenable: ctrl,
@@ -152,6 +251,44 @@ class _VideoPreviewScreenState extends State<VideoPreviewScreen> {
               );
             },
           ),
+          // 全屏歌词时间轴列表（点击歌词按钮展开）。
+          if (_lyrics != null && _lyricsOverlay)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: 0,
+              child: GestureDetector(
+                onTap: () => setState(() => _lyricsOverlay = false),
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.78),
+                  child: ListView.builder(
+                    controller: _lyricScroll,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 30, vertical: 180),
+                    itemCount: _lyrics!.lines.length,
+                    itemBuilder: (context, i) {
+                      final isCurrent = i == _lineIndex;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Text(
+                          _lyrics!.lines[i].text,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: isCurrent
+                                ? scheme.primary
+                                : Colors.white60,
+                            fontSize: isCurrent ? 20 : 15,
+                            fontWeight:
+                                isCurrent ? FontWeight.w700 : FontWeight.w400,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
           // 底部控制条。
           Positioned(
             left: 0,

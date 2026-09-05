@@ -253,9 +253,7 @@ class KikoLocalApp extends StatelessWidget {
                       child: Stack(
                         children: [
                           if (child != null) Positioned.fill(child: child),
-                          const Positioned(
-                            right: 10,
-                            top: 180,
+                          const Positioned.fill(
                             child: _GlobalPlayerOrb(),
                           ),
                         ],
@@ -485,6 +483,8 @@ class _GlobalPlayerOrbState extends State<_GlobalPlayerOrb>
   Duration _position = Duration.zero;
   Duration? _duration;
   bool _lastVisible = false;
+  double? _x;
+  double? _y;
   static bool _hinted = false;
 
   @override
@@ -553,69 +553,96 @@ class _GlobalPlayerOrbState extends State<_GlobalPlayerOrb>
         } catch (_) {}
       });
     }
+    final orbSize = 62.0;
     final progress = _duration == null || _duration!.inMilliseconds == 0
         ? 0.0
         : (_position.inMilliseconds / _duration!.inMilliseconds)
             .clamp(0.0, 1.0);
+    final playing = audio.isPlaying;
 
-    return SafeArea(
-      child: Align(
-        alignment: Alignment.bottomRight,
-        child: Padding(
-          padding: const EdgeInsets.only(right: 14, bottom: 96),
-          child: Semantics(
-            label: '悬浮播放按钮：单击进入播放器，双击播放暂停',
-            button: true,
-            child: GestureDetector(
-              onTap: _openPlayer,
-              onDoubleTap: _togglePlay,
-              child: SizedBox(
-                width: 62,
-                height: 62,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    StreamBuilder<Duration>(
-                      stream: audio.positionStream,
-                      builder: (context, snapshot) {
-                        _position = snapshot.data ?? _position;
-                        return SizedBox.expand(
-                          child: CircularProgressIndicator(
-                            value: progress,
-                            strokeWidth: 4,
-                            strokeCap: StrokeCap.round,
-                            backgroundColor:
-                                scheme.surfaceContainerHighest,
-                            color: scheme.primary,
-                          ),
-                        );
-                      },
-                    ),
-                    IgnorePointer(
-                      child: Material(
-                        color: scheme.surface.withValues(alpha: 0.95),
-                        shape: const CircleBorder(),
-                        elevation: 6,
-                        child: SizedBox(
-                          width: 46,
-                          height: 46,
-                          child: Icon(
-                            audio.isPlaying
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            size: 28,
-                            color: scheme.primary,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final h = constraints.maxHeight;
+        if (w <= 0 || h <= 0) return const SizedBox.shrink();
+        final maxLeft = (w - orbSize - 8).toDouble();
+        final maxTop = (h - orbSize - 16).toDouble();
+        // 初始位置：右下角（避开底部导航，留 ~96dp）。
+        _x ??= w - orbSize - 14;
+        _y ??= h - orbSize - 96;
+        final x = _x!.clamp(8.0, maxLeft < 8 ? 8.0 : maxLeft);
+        final y = _y!.clamp(12.0, maxTop < 12 ? 12.0 : maxTop);
+        return Stack(
+          children: [
+            Positioned(
+              left: x,
+              top: y,
+              child: GestureDetector(
+                onTap: _openPlayer,
+                onDoubleTap: _togglePlay,
+                onPanUpdate: (d) {
+                  setState(() {
+                    final nx = x + d.delta.dx;
+                    final ny = y + d.delta.dy;
+                    _x = nx.clamp(8.0, maxLeft < 8 ? 8.0 : maxLeft);
+                    _y = ny.clamp(12.0, maxTop < 12 ? 12.0 : maxTop);
+                  });
+                },
+                onPanEnd: (_) {
+                  // 松手吸附左右边缘（贴边），竖直保留当前位置。
+                  setState(() {
+                    final center = _x! + orbSize / 2;
+                    _x = center < w / 2 ? 8.0 : (w - orbSize - 8).toDouble();
+                  });
+                },
+                child: SizedBox(
+                  width: orbSize,
+                  height: orbSize,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      StreamBuilder<Duration>(
+                        stream: audio.positionStream,
+                        builder: (context, snapshot) {
+                          _position = snapshot.data ?? _position;
+                          return SizedBox.expand(
+                            child: CircularProgressIndicator(
+                              value: progress,
+                              strokeWidth: 4,
+                              strokeCap: StrokeCap.round,
+                              backgroundColor:
+                                  scheme.surfaceContainerHighest,
+                              color: scheme.primary,
+                            ),
+                          );
+                        },
+                      ),
+                      IgnorePointer(
+                        child: Material(
+                          color: scheme.surface.withValues(alpha: 0.95),
+                          shape: const CircleBorder(),
+                          elevation: 6,
+                          child: SizedBox(
+                            width: 46,
+                            height: 46,
+                            child: Icon(
+                              playing
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              size: 28,
+                              color: scheme.primary,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
-      ),
+          ],
+        );
+      },
     );
-  }
+}
 }

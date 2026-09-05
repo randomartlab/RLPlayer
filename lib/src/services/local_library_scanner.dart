@@ -117,11 +117,13 @@ class LocalLibraryScanner {
       return;
     }
 
-    // ③ 含音频文件 → 以文件夹名为标题的待整理作品（不再下钻）。
-    final hasAudio = files.any(
-      (f) => classifyFile(p.basename(f.path)) == FileClass.audio,
-    );
-    if (hasAudio) {
+    // ③ 含音频或视频文件 → 以文件夹名为标题的待整理作品（不再下钻）。
+    //（2026-09-05：视频音声（视频+图片、无音频）也应纳入。）
+    final hasMedia = files.any((f) {
+      final k = classifyFile(p.basename(f.path));
+      return k == FileClass.audio || k == FileClass.video;
+    });
+    if (hasMedia) {
       final work = await _buildWork(directory, files: files, dirs: dirs);
       if (work != null) works.add(work);
       return;
@@ -152,6 +154,7 @@ class LocalLibraryScanner {
   }) async {
     // ---- 1. 递归收集文件 ----
     final audioFiles = <File>[];
+    final videoFiles = <File>[];
     final sidecarFiles = <File>[]; // lrc / vtt / srt
     final imageFiles = <File>[];
     File? metadataFile;
@@ -160,6 +163,8 @@ class LocalLibraryScanner {
       switch (classifyFile(p.basename(file.path))) {
         case FileClass.audio:
           audioFiles.add(file);
+        case FileClass.video:
+          videoFiles.add(file);
         case FileClass.lyric || FileClass.subtitle:
           sidecarFiles.add(file);
         case FileClass.image:
@@ -176,7 +181,7 @@ class LocalLibraryScanner {
     }
     await _collectRecursive(dirs, classify);
 
-    if (audioFiles.isEmpty) return null;
+    if (audioFiles.isEmpty && videoFiles.isEmpty) return null;
 
     // ---- 2. metadata.json 解析（Kikoeru 格式，PRD §5.9.2 字段映射） ----
     Map<String, dynamic>? metadata;
@@ -216,7 +221,7 @@ class LocalLibraryScanner {
     audioFiles
       ..clear()
       ..addAll(keepAudio);
-    if (audioFiles.isEmpty) return null;
+    if (audioFiles.isEmpty && videoFiles.isEmpty) return null;
 
     if (rjCode == null) {
       // ③ 兜底：内部音频文件名含 RJ 号。
@@ -314,14 +319,17 @@ class LocalLibraryScanner {
     }
     var coverSource = CoverSource.localFile;
     if (coverPath == null) {
-      // 优先级 4：音频内嵌封面提取落盘。
-      coverPath = await _extractEmbeddedCover(audioFiles, workDir.path);
+      // 优先级 4：音频内嵌封面提取落盘（纯视频作品跳过）。
+      if (audioFiles.isNotEmpty) {
+        coverPath = await _extractEmbeddedCover(audioFiles, workDir.path);
+      }
       coverSource =
           coverPath != null ? CoverSource.embedded : CoverSource.placeholder;
     }
 
     // ---- 8. 构建文件树（目录 + 音轨，自然排序） ----
     final nodes = _buildNodes(workDir, audioFiles, durations,
+        videoFiles: videoFiles,
         lyricMap: lyricMap, subtitleMap: subtitleMap);
 
     // ---- 9. 汇总（全部时长未知时总时长为 null，不崩溃）----
@@ -340,7 +348,7 @@ class LocalLibraryScanner {
       coverPath: coverPath,
       coverSource: coverSource,
       durationSeconds: totalDuration,
-      trackCount: audioFiles.length,
+      trackCount: audioFiles.length + videoFiles.length,
       hasLyric: lyricMap.isNotEmpty,
       hasSubtitle: subtitleMap.isNotEmpty,
       nsfw: _boolOf(metadata?['nsfw']),
@@ -370,23 +378,25 @@ class LocalLibraryScanner {
     Directory workDir,
     List<File> audioFiles,
     Map<File, int?> durations, {
+    List<File> videoFiles = const [],
     required Map<File, File> lyricMap,
     required Map<File, File> subtitleMap,
   }) {
     final nodes = <ScannedNode>[];
 
-    // 包含音轨的目录集合（含其祖先链）。
-    final dirsWithAudio = <String>{};
-    for (final audio in audioFiles) {
-      var dir = audio.parent.path;
+    // 包含媒体（音频/视频）的目录集合（含其祖先链）。
+    final dirsWithMedia = <String>{};
+    final allMedia = <File>[...audioFiles, ...videoFiles];
+    for (final media in allMedia) {
+      var dir = media.parent.path;
       while (dir.length > workDir.path.length &&
           dir.startsWith(workDir.path)) {
-        dirsWithAudio.add(dir);
+        dirsWithMedia.add(dir);
         dir = p.dirname(dir);
       }
     }
 
-    for (final dir in dirsWithAudio) {
+    for (final dir in dirsWithMedia) {
       nodes.add(ScannedNode(
         isDirectory: true,
         name: p.basename(dir),
@@ -407,6 +417,16 @@ class LocalLibraryScanner {
         durationSeconds: durations[audio],
         lyricPath: lyricMap[audio]?.path,
         subtitlePath: subtitleMap[audio]?.path,
+      ));
+    }
+    for (final video in videoFiles) {
+      nodes.add(ScannedNode(
+        isDirectory: false,
+        name: p.basename(video.path),
+        relativePath: p.relative(video.path, from: workDir.path),
+        parentPath: _normalizeRelative(video.parent.path, workDir.path),
+        filePath: video.path,
+        isVideoFile: true,
       ));
     }
 

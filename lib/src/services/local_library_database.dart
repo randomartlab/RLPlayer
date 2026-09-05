@@ -16,7 +16,7 @@ class LocalLibraryDatabase {
   LocalLibraryDatabase._(this._db);
 
   static const String _dbName = 'kiko_local.db';
-  static const int _dbVersion = 11;
+  static const int _dbVersion = 12;
 
   /// 全部迁移逻辑的单一来源（v1 之后每版增量；onCreate 与 onUpgrade 共用，
   /// 杜绝 schema 漂移——修复“全新安装缺列”致命 bug 2026-09-02）。
@@ -83,6 +83,13 @@ class LocalLibraryDatabase {
           'work_title TEXT, cover_path TEXT, sort_index INTEGER NOT NULL, '
           'FOREIGN KEY(playlist_id) REFERENCES playlists(id) '
           'ON DELETE CASCADE)');
+    }
+    if (oldVersion < 12) {
+      // v12(2026-09-05): 视频文件作为可播放节点入库。
+      try {
+        await db.execute(
+            'ALTER TABLE file_nodes ADD COLUMN is_video INTEGER NOT NULL DEFAULT 0');
+      } catch (_) {}
     }
     if (oldVersion < 11) {
       // v11(2026-09-04): 来源扫描根目录（文件夹标签）。
@@ -175,6 +182,7 @@ class LocalLibraryDatabase {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         work_id INTEGER NOT NULL,
         is_directory INTEGER NOT NULL,
+        is_video INTEGER NOT NULL DEFAULT 0,
         name TEXT NOT NULL,
         relative_path TEXT NOT NULL,
         parent_path TEXT NOT NULL,
@@ -258,6 +266,7 @@ class LocalLibraryDatabase {
           batch.insert('file_nodes', {
             'work_id': workId,
             'is_directory': node.isDirectory ? 1 : 0,
+            'is_video': node.isVideoFile ? 1 : 0,
             'name': node.name,
             'relative_path': node.relativePath,
             'parent_path': node.parentPath,
@@ -395,6 +404,7 @@ class LocalLibraryDatabase {
       id: row['id'] as int,
       workId: row['work_id'] as int,
       isDirectory: (row['is_directory'] as int) == 1,
+      isVideoFile: ((row['is_video'] as int?) ?? 0) == 1,
       name: row['name'] as String,
       relativePath: row['relative_path'] as String,
       parentPath: row['parent_path'] as String,

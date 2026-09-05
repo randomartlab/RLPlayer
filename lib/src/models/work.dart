@@ -226,6 +226,7 @@ class ScannedNode {
     this.durationSeconds,
     this.lyricPath,
     this.subtitlePath,
+    this.isVideoFile = false,
   });
 
   final bool isDirectory;
@@ -236,6 +237,9 @@ class ScannedNode {
   final int? durationSeconds;
   final String? lyricPath;
   final String? subtitlePath;
+
+  /// 视频文件节点（入库持久化，v12）。
+  final bool isVideoFile;
 }
 
 /// 库存储统计（PRD §5.9.3）。

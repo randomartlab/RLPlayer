@@ -79,13 +79,20 @@ RjInfo? parseRjInfo(String name) {
   return RjInfo(code: code, title: title);
 }
 
-enum FileClass { audio, lyric, subtitle, image, metadata, other }
+enum FileClass { audio, lyric, subtitle, image, metadata, video, other }
+
+/// 视频文件扩展名（视频音声作品入库，2026-09-05）。
+const videoExtensions = <String>{
+  '.mp4', '.m4v', '.mkv', '.webm', '.mov', '.avi', '.wmv', '.flv', '.ts',
+  '.m2ts', '.3gp', '.ogv', '.mpg', '.mpeg',
+};
 
 /// 文件分类（按扩展名；隐藏文件调用方自行过滤）。
 FileClass classifyFile(String fileName) {
   final dot = fileName.lastIndexOf('.');
   final ext = dot >= 0 ? fileName.substring(dot).toLowerCase() : '';
   if (audioExtensions.contains(ext)) return FileClass.audio;
+  if (videoExtensions.contains(ext)) return FileClass.video;
   if (ext == lyricExtension) return FileClass.lyric;
   if (subtitleExtensions.contains(ext)) return FileClass.subtitle;
   if (imageExtensions.contains(ext)) return FileClass.image;
